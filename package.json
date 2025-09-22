@@ -1,15 +1,16 @@
 {
   "name": "com.dvos-tools.bus",
-  "version": "0.1.1",
-  "displayName": "Unity https://docs.unity3d.com/6000.2/Documentation/Manual/CustomPackages.htmlBus",
+  "version": "0.1.2",
+  "displayName": "Unity EventBus",
   "description": "A event bus system for Unity with automatic thread management using multiple dispatcher options.",
-  "unity": "2021.3",
+  "unity": "6000.0",
   "keywords": [
     "eventbus",
     "events",
     "bus",
     "threading",
-    "async"
+    "async",
+    "unity6"
   ],
   "author": {
     "name": "david-vos",
@@ -18,11 +19,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dvos-tools/unitybus.git"
+    "url": "https://github.com/dvos-tools/eventbus.git"
   },
   "bugs": {
-    "url": "https://github.com/dvos-tools/unitybus/issues"
+    "url": "https://github.com/dvos-tools/eventbus/issues"
   },
-  "homepage": "https://github.com/dvos-tools/unitybus#readme",
+  "homepage": "https://github.com/dvos-tools/eventbus#readme",
   "dependencies": {}
 }

@@ -1,6 +1,6 @@
 # Unity EventBus
 
-A high-performance event bus system for Unity with automatic thread management.
+A high-performance event bus system for Unity 6 with automatic thread management and flexible dispatcher support.
 
 ## Installation
 
@@ -28,14 +28,23 @@ public class PlayerDiedEvent
 // Subscribe to events
 public class GameManager : MonoBehaviour
 {
-    void Start()
+    static GameManager()
     {
-        EventBus.RegisterHandler<PlayerDiedEvent>(OnPlayerDied, requiresMainThread: true);
+        // Default dispatcher (UnityDispatcher.Instance)
+        EventBus.RegisterHandler<PlayerDiedEvent>(OnPlayerDied);
+        
+        // Or specify a custom dispatcher
+        EventBus.RegisterHandler<PlayerDiedEvent>(OnPlayerDiedImmediate, new ImmediateDispatcher());
     }
 
     private void OnPlayerDied(PlayerDiedEvent evt)
     {
         Debug.Log($"Player {evt.PlayerName} died with score {evt.Score}");
+    }
+    
+    private void OnPlayerDiedImmediate(PlayerDiedEvent evt)
+    {
+        Debug.Log($"Immediate: Player {evt.PlayerName} died with score {evt.Score}");
     }
 }
 
@@ -59,7 +68,7 @@ public class PlayerController : MonoBehaviour
 ## API
 
 ### EventBus
-- `RegisterHandler<T>(Action<T> handler, bool requiresMainThread = true)` - Register handler
+- `RegisterHandler<T>(Action<T> handler, IDispatcher dispatcher = null)` - Register handler with optional custom dispatcher
 - `Instance.Send<T>(T eventData)` - Send event asynchronously  
 - `Instance.SendAndWait<T>(T eventData)` - Send event synchronously
 - `Instance.Shutdown()` - Cleanup resources

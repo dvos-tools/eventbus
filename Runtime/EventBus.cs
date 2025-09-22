@@ -87,50 +87,21 @@ namespace com.DvosTools.bus.Runtime
 
             var handlerInfos = Handlers[queuedEvent.EventType];
 
-            // Separate handlers by thread requirement
-            var backgroundHandlers = handlerInfos.Where(h => !h.RequiresMainThread).ToList();
-            var mainThreadHandlers = handlerInfos.Where(h => h.RequiresMainThread).ToList();
-
             var tasks = new List<Task>();
 
-            // Process background handlers concurrently
-            if (backgroundHandlers.Any())
+            // Process all handlers using their assigned dispatchers
+            foreach (var handlerInfo in handlerInfos)
             {
-                var backgroundTasks = backgroundHandlers.Select(async handlerInfo =>
+                try
                 {
-                    try
-                    {
-                        await Task.Run(() => handlerInfo.Handler(queuedEvent.EventData),
-                            _cancellationTokenSource.Token);
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError(
-                            $"[EventBus] Error in background handler for {queuedEvent.EventType.Name}: {ex.Message}");
-                    }
-                });
-                tasks.AddRange(backgroundTasks);
-            }
-
-            // Process main thread handlers concurrently (dispatched to the main thread)
-            if (mainThreadHandlers.Any())
-            {
-                var mainThreadTasks = mainThreadHandlers.Select(handlerInfo =>
+                    // Use the dispatcher assigned to this handler
+                    handlerInfo.Dispatcher.Dispatch(() => handlerInfo.Handler(queuedEvent.EventData));
+                }
+                catch (Exception ex)
                 {
-                    try
-                    {
-                        // Dispatch to Unity main thread
-                        _mainThreadDispatcher.Dispatch(() => handlerInfo.Handler(queuedEvent.EventData));
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError(
-                            $"[EventBus] Error in main thread handler for {queuedEvent.EventType.Name}: {ex.Message}");
-                    }
-
-                    return Task.CompletedTask;
-                });
-                tasks.AddRange(mainThreadTasks);
+                    Debug.LogError(
+                        $"[EventBus] Error in handler for {queuedEvent.EventType.Name}: {ex.Message}");
+                }
             }
 
             // Wait for all handlers to complete
@@ -149,12 +120,8 @@ namespace com.DvosTools.bus.Runtime
                 {
                     try
                     {
-                        if (handlerInfo.RequiresMainThread)
-                            // Use dispatcher for main thread handlers
-                            _mainThreadDispatcher.Dispatch(() => handlerInfo.Handler(eventData));
-                        else
-                            // Use background dispatcher for background handlers
-                            _backgroundDispatcher.Dispatch(() => handlerInfo.Handler(eventData));
+                        // Use the dispatcher assigned to this handler
+                        handlerInfo.Dispatcher.Dispatch(() => handlerInfo.Handler(eventData));
                     }
                     catch (Exception ex)
                     {
@@ -169,11 +136,14 @@ namespace com.DvosTools.bus.Runtime
         }
 
         // Static method for handlers to register themselves
-        public static void RegisterHandler<T>(Action<T> handler, bool requiresMainThread = true) where T : class
+        public static void RegisterHandler<T>(Action<T> handler, IDispatcher dispatcher = null) where T : class
         {
             var eventType = typeof(T);
             var wrapper = new Action<object>(obj => handler((T)obj));
-            var handlerInfo = new Subscription(wrapper, requiresMainThread);
+            
+            // Default to UnityDispatcher.Instance if no dispatcher provided
+            var customDispatcher = dispatcher ?? UnityDispatcher.Instance;
+            var handlerInfo = new Subscription(wrapper, customDispatcher);
 
             if (!Instance.Handlers.ContainsKey(eventType))
                 Instance.Handlers[eventType] = new List<Subscription>();

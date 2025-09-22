@@ -1,16 +1,17 @@
 using System;
+using com.DvosTools.bus.Runtime.Dispatchers;
 
 namespace com.DvosTools.bus.Runtime
 {
     public class Subscription
     {
         public Action<object> Handler { get; set; }
-        public bool RequiresMainThread { get; set; }
+        public IDispatcher Dispatcher { get; set; }
 
-        public Subscription(Action<object> handler, bool requiresMainThread)
+        public Subscription(Action<object> handler, IDispatcher dispatcher)
         {
             Handler = handler;
-            RequiresMainThread = requiresMainThread;
+            Dispatcher = dispatcher;
         }
     }
 }
