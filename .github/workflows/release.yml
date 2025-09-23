@@ -33,77 +33,8 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
     
-    - name: Analyze commits and bump version
+    - name: Run semantic-release (version bump only)
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # Get current version
-        CURRENT_VERSION=$(grep '"version"' package.json | sed 's/.*"version": *"\([^"]*\)".*/\1/')
-        echo "Current version: $CURRENT_VERSION"
-        
-        # Get commits since last tag
-        LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-        if [ -z "$LAST_TAG" ]; then
-          echo "No previous tags found, analyzing all commits"
-          COMMITS=$(git log --pretty=format:"%s" --no-merges)
-        else
-          echo "Analyzing commits since $LAST_TAG"
-          COMMITS=$(git log --pretty=format:"%s" ${LAST_TAG}..HEAD --no-merges)
-        fi
-        
-        # Determine version bump type
-        VERSION_BUMP="patch"
-        if echo "$COMMITS" | grep -qE "^feat"; then
-          VERSION_BUMP="minor"
-          echo "Found feat commits → minor bump"
-        fi
-        if echo "$COMMITS" | grep -qE "^feat!" || echo "$COMMITS" | grep -q "BREAKING CHANGE"; then
-          VERSION_BUMP="major"
-          echo "Found breaking changes → major bump"
-        fi
-        
-        echo "Version bump type: $VERSION_BUMP"
-        
-        # Bump version
-        npm version $VERSION_BUMP --no-git-tag-version
-        NEW_VERSION=$(grep '"version"' package.json | sed 's/.*"version": *"\([^"]*\)".*/\1/')
-        echo "New version: $NEW_VERSION"
-        
-        # Update CHANGELOG.md
-        DATE=$(date +%Y-%m-%d)
-        cat > changelog_temp.md << EOF
-# Changelog
-
-## [Unreleased]
-
-## [$NEW_VERSION] - $DATE
-
-### Changes
-EOF
-        
-        # Add commit messages to changelog
-        echo "$COMMITS" | while read -r commit; do
-          if [[ ! -z "$commit" ]]; then
-            echo "- $commit" >> changelog_temp.md
-          fi
-        done
-        
-        echo "" >> changelog_temp.md
-        
-        # Append existing changelog content
-        if [[ $(head -n 1 CHANGELOG.md) == "# Changelog" ]]; then
-          tail -n +2 CHANGELOG.md >> changelog_temp.md
-        else
-          cat CHANGELOG.md >> changelog_temp.md
-        fi
-        
-        mv changelog_temp.md CHANGELOG.md
-        echo "Updated CHANGELOG.md"
-    
-    - name: Commit version bump
-      run: |
-        NEW_VERSION=$(grep '"version"' package.json | sed 's/.*"version": *"\([^"]*\)".*/\1/')
-        git add package.json CHANGELOG.md
-        git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
-        git push origin main
-        echo "✅ Version bumped to $NEW_VERSION"
+        npx semantic-release

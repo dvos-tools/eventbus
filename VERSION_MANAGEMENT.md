@@ -80,18 +80,17 @@ BREAKING CHANGE: The old API is no longer supported
 
 When you're ready to release:
 
-1. **Go to GitHub Actions** → "Manual Release" workflow
-2. **Click "Run workflow"**
-3. **Enter version number** (e.g., `1.1.0`)
-4. **Add release notes** (optional)
-5. **Click "Run workflow"**
+1. **Go to GitHub** → Your repository → **Releases**
+2. **Click "Create a new release"**
+3. **Choose a tag** (e.g., `v1.1.0`) or create a new one
+4. **Add release title** (e.g., `Release v1.1.0`)
+5. **Add release notes** (copy from CHANGELOG.md)
+6. **Click "Publish release"**
 
-The workflow will:
-- Validate version format
-- Check if version already exists
-- Update `package.json` to exact version
-- Create Git tag
-- Create GitHub release
+GitHub will automatically:
+- Create the Git tag
+- Create the GitHub release
+- Make the release available for download
 
 ### Example Workflow
 
@@ -114,10 +113,10 @@ git push origin main
 # - NO release created yet
 
 # When ready to release:
-# 1. Go to GitHub Actions → "Manual Release"
-# 2. Enter version: 1.1.0
-# 3. Add release notes
-# 4. Run workflow → Creates official release
+# 1. Go to GitHub → Releases → "Create a new release"
+# 2. Choose tag: v1.1.0
+# 3. Add release notes (copy from CHANGELOG.md)
+# 4. Publish release → Creates official release
 ```
 
 
