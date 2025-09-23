@@ -70,6 +70,17 @@ public class PlayerController : MonoBehaviour
 - **ThreadPoolDispatcher**: Background thread execution  
 - **ImmediateDispatcher**: Immediate execution
 
+## Development Workflow
+
+```bash
+# Development
+feat: add new dispatcher → Merge to main → Version: 1.0.0 → 1.1.0
+fix: resolve bug → Merge to main → Version: 1.1.0 → 1.1.1
+
+# When ready to release:
+# GitHub Actions → Manual Release → Enter "1.1.1" → Creates release
+```
+
 ## License
 
 MIT License

@@ -1,73 +1,37 @@
-name: Release Unity Package
+name: Semantic Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [ main ]
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to release (e.g., 1.0.0)'
-        required: true
-        type: string
 
 jobs:
-  release:
+  semantic-release:
     runs-on: ubuntu-latest
     
     steps:
     - name: Checkout
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Need full history for conventional commits
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
     
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '18'
     
-    - name: Install dependencies
-      run: npm install -g conventional-changelog-cli
-    
-    - name: Extract version from tag
-      id: version
+    - name: Install semantic-release
       run: |
-        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-        else
-          echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-        fi
+        npm install -g semantic-release @semantic-release/changelog @semantic-release/git
     
-    - name: Update package.json version
-      run: |
-        npm version ${{ steps.version.outputs.version }} --no-git-tag-version
-        echo "Updated package.json to version ${{ steps.version.outputs.version }}"
-    
-    - name: Generate changelog
-      run: |
-        conventional-changelog -p angular -i CHANGELOG.md -s -r 0
-        echo "Generated changelog"
-    
-    - name: Commit changes
+    - name: Configure Git
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add package.json CHANGELOG.md
-        git commit -m "chore: bump version to ${{ steps.version.outputs.version }}"
-        git tag -f "v${{ steps.version.outputs.version }}"
     
-    - name: Create GitHub Release
-      uses: actions/create-release@v1
+    - name: Run semantic-release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: v${{ steps.version.outputs.version }}
-        release_name: Release v${{ steps.version.outputs.version }}
-        body_path: CHANGELOG.md
-        draft: false
-        prerelease: false
-    
-    - name: Push changes
       run: |
-        git push origin main
-        git push origin "v${{ steps.version.outputs.version }}"
+        npx semantic-release
