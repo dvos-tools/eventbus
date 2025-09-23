@@ -28,23 +28,15 @@ public class PlayerDiedEvent
 // Subscribe to events
 public class GameManager : MonoBehaviour
 {
-    static GameManager()
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void InitializeStaticHandlers()
     {
-        // Default dispatcher (UnityDispatcher.Instance)
-        EventBus.RegisterHandler<PlayerDiedEvent>(OnPlayerDied);
-        
-        // Or specify a custom dispatcher
-        EventBus.RegisterHandler<PlayerDiedEvent>(OnPlayerDiedImmediate, new ImmediateDispatcher());
+        EventBus.RegisterStaticHandler<PlayerDiedEvent>(HandlePlayerDiedEvent);
     }
 
-    private void OnPlayerDied(PlayerDiedEvent evt)
+    private static void HandlePlayerDiedEvent(PlayerDiedEvent evt)
     {
         Debug.Log($"Player {evt.PlayerName} died with score {evt.Score}");
-    }
-    
-    private void OnPlayerDiedImmediate(PlayerDiedEvent evt)
-    {
-        Debug.Log($"Immediate: Player {evt.PlayerName} died with score {evt.Score}");
     }
 }
 

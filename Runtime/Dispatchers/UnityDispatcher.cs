@@ -8,21 +8,9 @@ namespace com.DvosTools.bus.Runtime.Dispatchers
     {
         private static UnityDispatcher _instance;
         private readonly Queue<Action> _executionQueue = new();
-        private readonly object _queueLock = new();
 
-        public static UnityDispatcher Instance
-        {
-            get
-            {
-                if (_instance == null)
-                {
-                    var go = new GameObject("UnityDispatcher");
-                    _instance = go.AddComponent<UnityDispatcher>();
-                    DontDestroyOnLoad(go);
-                }
-                return _instance;
-            }
-        }
+        public static UnityDispatcher Instance =>
+            _instance ??= new GameObject(nameof(UnityDispatcher)).AddComponent<UnityDispatcher>();
 
         private void Awake()
         {
@@ -39,28 +27,21 @@ namespace com.DvosTools.bus.Runtime.Dispatchers
 
         public void Dispatch(Action action)
         {
-            lock (_queueLock)
+            if (!Application.isPlaying)
             {
-                _executionQueue.Enqueue(action);
+                action?.Invoke();
+                return;
             }
+
+            _executionQueue.Enqueue(action);
         }
 
         private void Update()
         {
-            lock (_queueLock)
+            while (_executionQueue.Count > 0)
             {
-                while (_executionQueue.Count > 0)
-                {
-                    var action = _executionQueue.Dequeue();
-                    try
-                    {
-                        action?.Invoke();
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError($"[UnityDispatcher] Error executing action: {ex.Message}");
-                    }
-                }
+                var action = _executionQueue.Dequeue();
+                action?.Invoke();
             }
         }
     }

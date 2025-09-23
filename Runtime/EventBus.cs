@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using com.DvosTools.bus.Runtime.Dispatchers;
@@ -10,13 +9,14 @@ namespace com.DvosTools.bus.Runtime
 {
     public class EventBus
     {
-        private static EventBus _instance;
+        private static EventBus? _instance;
         public readonly Dictionary<Type, List<Subscription>> Handlers = new();
         public readonly Queue<QueuedEvent> EventQueue = new();
         public readonly object QueueLock = new();
         private readonly CancellationTokenSource _cancellationTokenSource = new();
-        private readonly IDispatcher _mainThreadDispatcher = new UnityDispatcher();
-        private readonly IDispatcher _backgroundDispatcher = new ThreadPoolDispatcher();
+        
+        // Maximum number of events to process in one batch before yielding
+        private const int MaxBatchSize = 10;
 
         public static EventBus Instance => _instance ??= new EventBus();
 
@@ -49,19 +49,27 @@ namespace com.DvosTools.bus.Runtime
             {
                 try
                 {
-                    QueuedEvent eventToProcess = null;
-
+                    var eventsToProcess = new List<QueuedEvent>();
+                    
+                    // Collect up to MaxBatchSize events
                     lock (QueueLock)
                     {
-                        if (EventQueue.Count > 0)
+                        var count = Math.Min(EventQueue.Count, MaxBatchSize);
+                        for (int i = 0; i < count; i++)
                         {
-                            eventToProcess = EventQueue.Dequeue();
+                            if (EventQueue.Count > 0)
+                            {
+                                eventsToProcess.Add(EventQueue.Dequeue());
+                            }
                         }
                     }
 
-                    if (eventToProcess != null)
+                    if (eventsToProcess.Count > 0)
                     {
-                        await ProcessEvent(eventToProcess);
+                        foreach (var eventToProcess in eventsToProcess)
+                        {
+                            ProcessEvent(eventToProcess);
+                        }
                     }
                     else
                     {
@@ -81,13 +89,15 @@ namespace com.DvosTools.bus.Runtime
             }
         }
 
-        private async Task ProcessEvent(QueuedEvent queuedEvent)
+        private void ProcessEvent(QueuedEvent queuedEvent)
         {
             Debug.Log($"[EventBus] Processing event: {queuedEvent.EventData} ({queuedEvent.EventType.Name}) queued at: {queuedEvent.QueuedAt}");
 
-            var handlerInfos = Handlers[queuedEvent.EventType];
-
-            var tasks = new List<Task>();
+            if (!Handlers.TryGetValue(queuedEvent.EventType, out var handlerInfos))
+            {
+                Debug.LogWarning($"[EventBus] No handlers found for event type: {queuedEvent.EventType.Name}");
+                return;
+            }
 
             // Process all handlers using their assigned dispatchers
             foreach (var handlerInfo in handlerInfos)
@@ -103,9 +113,6 @@ namespace com.DvosTools.bus.Runtime
                         $"[EventBus] Error in handler for {queuedEvent.EventType.Name}: {ex.Message}");
                 }
             }
-
-            // Wait for all handlers to complete
-            if (tasks.Any()) await Task.WhenAll(tasks);
         }
 
 
@@ -136,13 +143,12 @@ namespace com.DvosTools.bus.Runtime
         }
 
         // Static method for handlers to register themselves
-        public static void RegisterHandler<T>(Action<T> handler, IDispatcher dispatcher = null) where T : class
+        public static void RegisterStaticHandler<T>(Action<T> handler, IDispatcher? dispatcher = null) where T : class
         {
             var eventType = typeof(T);
             var wrapper = new Action<object>(obj => handler((T)obj));
             
-            // Default to UnityDispatcher.Instance if no dispatcher provided
-            var customDispatcher = dispatcher ?? UnityDispatcher.Instance;
+            var customDispatcher = dispatcher ?? new ThreadPoolDispatcher();
             var handlerInfo = new Subscription(wrapper, customDispatcher);
 
             if (!Instance.Handlers.ContainsKey(eventType))
