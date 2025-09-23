@@ -4,6 +4,6 @@ namespace com.DvosTools.bus.Runtime
 {
     public interface IDispatcher
     {
-        void Dispatch(Action action);
+        void Dispatch(Action? action);
     }
 }

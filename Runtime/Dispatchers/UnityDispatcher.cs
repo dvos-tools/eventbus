@@ -1,48 +1,53 @@
 using System;
-using System.Collections.Generic;
+using System.Threading;
 using UnityEngine;
 
 namespace com.DvosTools.bus.Runtime.Dispatchers
 {
     public class UnityDispatcher : MonoBehaviour, IDispatcher
     {
-        private static UnityDispatcher _instance;
-        private readonly Queue<Action> _executionQueue = new();
+        private static UnityDispatcher? _instance;
+        private static readonly object Lock = new();
+        private static SynchronizationContext? _mainThreadContext;
 
-        public static UnityDispatcher Instance =>
-            _instance ??= new GameObject(nameof(UnityDispatcher)).AddComponent<UnityDispatcher>();
+        public static UnityDispatcher? Instance
+        {
+            get
+            {
+                if (_instance == null)
+                {
+                    lock (Lock)
+                    {
+                        if (_instance == null)
+                        {
+                            var go = new GameObject(nameof(UnityDispatcher));
+                            _instance = go.AddComponent<UnityDispatcher>();
+                            DontDestroyOnLoad(go);
+                        }
+                    }
+                }
+                return _instance;
+            }
+        }
 
         private void Awake()
         {
-            if (_instance == null)
-            {
-                _instance = this;
-                DontDestroyOnLoad(gameObject);
-            }
-            else if (_instance != this)
-            {
-                Destroy(gameObject);
-            }
+            // Capture the main thread context
+            _mainThreadContext = SynchronizationContext.Current;
         }
 
-        public void Dispatch(Action action)
+        public void Dispatch(Action? action)
         {
-            if (!Application.isPlaying)
+            if (_mainThreadContext != null)
             {
-                action?.Invoke();
-                return;
+                // Use SynchronizationContext to post to the main thread
+                _mainThreadContext.Post(_ => action?.Invoke(), null);
             }
-
-            _executionQueue.Enqueue(action);
-        }
-
-        private void Update()
-        {
-            while (_executionQueue.Count > 0)
+            else
             {
-                var action = _executionQueue.Dequeue();
-                action?.Invoke();
+                _mainThreadContext = SynchronizationContext.Current;
             }
         }
+
     }
 }
