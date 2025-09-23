@@ -1,0 +1,51 @@
+name: Auto Version Bump
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  version-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+    
+    - name: Install semantic-release
+      run: npm install -g semantic-release @semantic-release/changelog @semantic-release/git
+    
+    - name: Check if version should be bumped
+      run: |
+        # Check if there are any commits since last release that warrant a version bump
+        LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+        if [ -z "$LAST_TAG" ]; then
+          echo "No previous tags found"
+          exit 0
+        fi
+        
+        # Check for conventional commits since last tag
+        COMMITS=$(git log --pretty=format:"%s" ${LAST_TAG}..HEAD)
+        
+        if echo "$COMMITS" | grep -qE "^(feat|fix|BREAKING CHANGE)"; then
+          echo "Version bump needed"
+          echo "VERSION_BUMP=true" >> $GITHUB_ENV
+        else
+          echo "No version bump needed"
+          echo "VERSION_BUMP=false" >> $GITHUB_ENV
+        fi
+    
+    - name: Suggest version bump
+      if: env.VERSION_BUMP == 'true'
+      run: |
+        echo "🚀 This PR contains changes that warrant a version bump!"
+        echo "Consider creating a release tag when merging to main."
