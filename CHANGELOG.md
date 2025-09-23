@@ -1,3 +1,11 @@
+## [1.0.1](https://github.com/dvos-tools/eventbus/compare/v1.0.0...v1.0.1) (2025-09-23)
+
+
+### Bug Fixes
+
+* hopefully last try... ([5b7dcb7](https://github.com/dvos-tools/eventbus/commit/5b7dcb7af87b950c7e35088364709f05dec109c7))
+* oke now without a release lol ([e252d73](https://github.com/dvos-tools/eventbus/commit/e252d7390db114898ffb5004b2d0320aa4f01cd0))
+
 ## 1.0.0 (2025-09-23)
 
 
