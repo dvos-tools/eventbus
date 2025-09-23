@@ -1,3 +1,11 @@
+## [1.0.2](https://github.com/dvos-tools/eventbus/compare/v1.0.1...v1.0.2) (2025-09-23)
+
+
+### Bug Fixes
+
+* actual uuid for asmef ([9354ef4](https://github.com/dvos-tools/eventbus/commit/9354ef4ac70be79fb8ca32508ad1c113d8b56acb))
+* add missing asmdef.meta file for Unity package compatibility ([27aed95](https://github.com/dvos-tools/eventbus/commit/27aed95e73170501d390ec78f9da7d7d095da126))
+
 ## [1.0.1](https://github.com/dvos-tools/eventbus/compare/v1.0.0...v1.0.1) (2025-09-23)
 
 
