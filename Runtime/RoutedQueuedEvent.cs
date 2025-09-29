@@ -1,6 +1,6 @@
 using System;
 
-namespace com.DvosTools.bus.Runtime
+namespace com.DvosTools.bus
 {
     /// <summary>
     /// Represents a queued event with routing information.

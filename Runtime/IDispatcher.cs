@@ -1,6 +1,6 @@
 using System;
 
-namespace com.DvosTools.bus.Runtime
+namespace com.DvosTools.bus
 {
     public interface IDispatcher
     {

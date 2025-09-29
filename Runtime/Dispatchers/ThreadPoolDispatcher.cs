@@ -1,7 +1,7 @@
 using System;
 using System.Threading.Tasks;
 
-namespace com.DvosTools.bus.Runtime.Dispatchers
+namespace com.DvosTools.bus.Dispatchers
 {
     public class ThreadPoolDispatcher : IDispatcher
     {

@@ -1,9 +1,8 @@
 using System;
+using com.DvosTools.bus.Dispatchers;
 using NUnit.Framework;
-using com.DvosTools.bus.Runtime;
-using com.DvosTools.bus.Runtime.Dispatchers;
 
-namespace com.DvosTools.bus.Tests
+namespace com.DvosTools.bus
 {
     [TestFixture]
     public class EventBusBasicRegistrationTests

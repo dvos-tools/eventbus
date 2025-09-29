@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using com.DvosTools.bus.Runtime.Dispatchers;
+using com.DvosTools.bus.Dispatchers;
 using UnityEngine;
 
-namespace com.DvosTools.bus.Runtime
+namespace com.DvosTools.bus
 {
     public class EventBus
     {

@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace com.DvosTools.bus.Runtime
+namespace com.DvosTools.bus
 {
     public class BusHelper : MonoBehaviour
     {
