@@ -25,7 +25,10 @@
     "url": "https://github.com/dvos-tools/eventbus/issues"
   },
   "homepage": "https://github.com/dvos-tools/eventbus#readme",
-  "dependencies": {},
+  "dependencies": {
+    "com.unity.test-framework": "1.1.33",
+    "com.unity.nuget.moq": "2.8.10"
+  },
   "devDependencies": {
     "semantic-release": "^24.2.9",
     "@semantic-release/changelog": "^6.0.3",
