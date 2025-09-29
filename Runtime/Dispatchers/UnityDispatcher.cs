@@ -2,7 +2,7 @@ using System;
 using System.Threading;
 using UnityEngine;
 
-namespace com.DvosTools.bus.Runtime.Dispatchers
+namespace com.DvosTools.bus.Dispatchers
 {
     public class UnityDispatcher : MonoBehaviour, IDispatcher
     {

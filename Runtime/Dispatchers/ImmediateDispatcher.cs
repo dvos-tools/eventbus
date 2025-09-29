@@ -1,6 +1,6 @@
 using System;
 
-namespace com.DvosTools.bus.Runtime.Dispatchers
+namespace com.DvosTools.bus.Dispatchers
 {
     public class ImmediateDispatcher : IDispatcher
     {

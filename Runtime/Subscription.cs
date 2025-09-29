@@ -1,7 +1,6 @@
 using System;
-using com.DvosTools.bus.Runtime.Dispatchers;
 
-namespace com.DvosTools.bus.Runtime
+namespace com.DvosTools.bus
 {
     public class Subscription
     {

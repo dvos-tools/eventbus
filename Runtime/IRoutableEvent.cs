@@ -1,6 +1,6 @@
 using System;
 
-namespace com.DvosTools.bus.Runtime
+namespace com.DvosTools.bus
 {
     /// <summary>
     /// Interface for events that support routing based on aggregate ID.
@@ -9,10 +9,6 @@ namespace com.DvosTools.bus.Runtime
     /// </summary>
     public interface IRoutableEvent
     {
-        /// <summary>
-        /// The aggregate ID used for routing this event to specific handlers.
-        /// This should be a UUID that identifies the aggregate root.
-        /// </summary>
         Guid AggregateId { get; }
     }
 }
