@@ -19,7 +19,7 @@ namespace com.DvosTools.bus.Runtime
         private const int MaxBatchSize = 100;
         
         // Logging configuration
-        public static bool EnableLogging { get; set; } = false;
+        public static bool EnableLogging { get; set; } = true;
 
         public static EventBus Instance => _instance ??= new EventBus();
 
@@ -152,7 +152,6 @@ namespace com.DvosTools.bus.Runtime
             }
         }
 
-
         public void SendAndWait<T>(T eventData) where T : class
         {
             var eventType = typeof(T);
@@ -167,15 +166,6 @@ namespace com.DvosTools.bus.Runtime
                 LogWarning($"No handlers for {eventType.Name}");
         }
 
-        /// <summary>
-        /// Registers a handler for the specified event type.
-        /// If aggregateId is provided (not Guid.Empty), the handler will only receive events with matching aggregate IDs.
-        /// If aggregateId is Guid.Empty, the handler will receive all events of the specified type.
-        /// </summary>
-        /// <typeparam name="T">The event type to handle</typeparam>
-        /// <param name="handler">The event handler</param>
-        /// <param name="aggregateId">Optional aggregate ID for routing. Use Guid.Empty for regular handlers.</param>
-        /// <param name="dispatcher">Optional custom dispatcher for executing the handler</param>
         public static void RegisterHandler<T>(Action<T> handler, Guid aggregateId = default, IDispatcher? dispatcher = null) where T : class
         {
             var eventType = typeof(T);
@@ -197,6 +187,12 @@ namespace com.DvosTools.bus.Runtime
             {
                 Log($"Registered handler for {eventType.Name}");
             }
+        }
+
+        [System.Obsolete("Use RegisterHandler instead. This method is provided for backwards compatibility.")]
+        public static void RegisterStaticHandler<T>(Action<T> handler, IDispatcher? dispatcher = null) where T : class
+        {
+            RegisterHandler(handler, Guid.Empty, dispatcher);
         }
 
         public void Shutdown()
