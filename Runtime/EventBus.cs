@@ -16,14 +16,37 @@ namespace com.DvosTools.bus.Runtime
         private readonly CancellationTokenSource _cancellationTokenSource = new();
         
         // Maximum number of events to process in one batch before yielding
-        private const int MaxBatchSize = 10;
+        private const int MaxBatchSize = 100;
+        
+        // Logging configuration
+        public static bool EnableLogging { get; set; } = true;
 
         public static EventBus Instance => _instance ??= new EventBus();
 
         private EventBus()
         {
-            // Start the background queue processor
-            _ = Task.Run(ProcessEventQueueAsync, _cancellationTokenSource.Token);
+            _ = Task.Run(ProcessEventQueueAsync, _cancellationTokenSource.Token); // Start the background queue processor
+        }
+
+        private static void Log(string message)
+        {
+            if (EnableLogging)
+            {
+                Debug.Log($"[EventBus] {message}");
+            }
+        }
+
+        private static void LogWarning(string message)
+        {
+            if (EnableLogging)
+            {
+                Debug.LogWarning($"[EventBus] {message}");
+            }
+        }
+
+        private static void LogError(string message)
+        {
+            Debug.LogError($"[EventBus] {message}");
         }
 
         public void Send<T>(T eventData) where T : class
@@ -35,11 +58,9 @@ namespace com.DvosTools.bus.Runtime
             );
 
             lock (QueueLock)
-            {
                 EventQueue.Enqueue(queuedEvent);
-            }
 
-            Debug.Log($"[EventBus] Queued event: {eventData} ({typeof(T).Name}) at {queuedEvent.QueuedAt}");
+            Log($"Queued {typeof(T).Name}");
         }
 
 
@@ -56,105 +77,122 @@ namespace com.DvosTools.bus.Runtime
                     {
                         var count = Math.Min(EventQueue.Count, MaxBatchSize);
                         for (int i = 0; i < count; i++)
-                        {
                             if (EventQueue.Count > 0)
-                            {
                                 eventsToProcess.Add(EventQueue.Dequeue());
-                            }
-                        }
                     }
 
                     if (eventsToProcess.Count > 0)
                     {
                         foreach (var eventToProcess in eventsToProcess)
-                        {
                             ProcessEvent(eventToProcess);
-                        }
                     }
-                    else
-                    {
-                        // No events available, yield control briefly then continue
-                        await Task.Yield();
-                    }
+                    else await Task.Yield();
                 }
                 catch (OperationCanceledException)
                 {
-                    // Expected when cancellation is requested
-                    break;
+                    break; // Expected when cancellation is requested
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"[EventBus] Error in queue processor: {ex.Message}");
+                    LogError($"Queue processor error: {ex.Message}");
                 }
             }
         }
 
         private void ProcessEvent(QueuedEvent queuedEvent)
         {
-            Debug.Log($"[EventBus] Processing event: {queuedEvent.EventData} ({queuedEvent.EventType.Name}) queued at: {queuedEvent.QueuedAt}");
-
-            if (!Handlers.TryGetValue(queuedEvent.EventType, out var handlerInfos))
+            var routedEvent = RoutedQueuedEvent.FromQueuedEvent(queuedEvent);
+            
+            if (Handlers.TryGetValue(queuedEvent.EventType, out var handlerInfos))
             {
-                Debug.LogWarning($"[EventBus] No handlers found for event type: {queuedEvent.EventType.Name}");
+                foreach (var handlerInfo in handlerInfos)
+                    ProcessHandler(handlerInfo, queuedEvent.EventData, queuedEvent.EventType.Name, routedEvent.AggregateId);
+            }
+            else 
+                LogWarning($"No handlers for {queuedEvent.EventType.Name}");
+        }
+
+        private void ProcessHandler(Subscription subscription, object eventData, string eventTypeName, Guid eventAggregateId)
+        {
+            // Check if this handler has an aggregate ID requirement
+            if (subscription.AggregateId != Guid.Empty)
+            {
+                // only process if aggregate IDs match
+                if (eventAggregateId != Guid.Empty && subscription.AggregateId == eventAggregateId)
+                    ExecuteRoutedHandler(subscription, eventData, eventTypeName, eventAggregateId);
+                
                 return;
             }
 
-            // Process all handlers using their assigned dispatchers
-            foreach (var handlerInfo in handlerInfos)
+            // This is a regular handler - process all events
+            ExecuteHandler(subscription, eventData, eventTypeName);
+        }
+
+        private void ExecuteHandler(Subscription subscription, object eventData, string eventTypeName)
+        {
+            try
             {
-                try
-                {
-                    // Use the dispatcher assigned to this handler
-                    handlerInfo.Dispatcher.Dispatch(() => handlerInfo.Handler(queuedEvent.EventData));
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogError(
-                        $"[EventBus] Error in handler for {queuedEvent.EventType.Name}: {ex.Message}");
-                }
+                subscription.Dispatcher.Dispatch(() => subscription.Handler(eventData));
+            }
+            catch (Exception ex)
+            {
+                LogError($"Handler error for {eventTypeName}: {ex.Message}");
             }
         }
 
+        private void ExecuteRoutedHandler(Subscription subscription, object eventData, string eventTypeName, Guid aggregateId)
+        {
+            try
+            {
+                subscription.Dispatcher.Dispatch(() => subscription.Handler(eventData));
+            }
+            catch (Exception ex)
+            {
+                LogError($"Routed handler error for {eventTypeName} (ID: {aggregateId}): {ex.Message}");
+            }
+        }
 
         public void SendAndWait<T>(T eventData) where T : class
         {
             var eventType = typeof(T);
-            Debug.Log($"[EventBus] Publishing event: {eventData} ({eventType.Name})");
+            var routedEvent = RoutedQueuedEvent.FromQueuedEvent(new QueuedEvent(eventData, eventType));
 
             if (Handlers.TryGetValue(eventType, out var handlerInfos))
             {
                 foreach (var handlerInfo in handlerInfos)
-                {
-                    try
-                    {
-                        // Use the dispatcher assigned to this handler
-                        handlerInfo.Dispatcher.Dispatch(() => handlerInfo.Handler(eventData));
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError($"[EventBus] Error in handler for {eventType.Name}: {ex.Message}");
-                    }
-                }
-
-                return;
+                    ProcessHandler(handlerInfo, eventData, eventType.Name, routedEvent.AggregateId);
             }
-
-            Debug.LogWarning($"[EventBus] No handlers found for event type: {eventType.Name}");
+            else 
+                LogWarning($"No handlers for {eventType.Name}");
         }
 
-        // Static method for handlers to register themselves
-        public static void RegisterStaticHandler<T>(Action<T> handler, IDispatcher? dispatcher = null) where T : class
+        public static void RegisterHandler<T>(Action<T> handler, Guid aggregateId = default, IDispatcher? dispatcher = null) where T : class
         {
             var eventType = typeof(T);
             var wrapper = new Action<object>(obj => handler((T)obj));
             
             var customDispatcher = dispatcher ?? new ThreadPoolDispatcher();
-            var handlerInfo = new Subscription(wrapper, customDispatcher);
+            var subscription = new Subscription(wrapper, customDispatcher, aggregateId);
 
             if (!Instance.Handlers.ContainsKey(eventType))
                 Instance.Handlers[eventType] = new List<Subscription>();
 
-            Instance.Handlers[eventType].Add(handlerInfo);
+            Instance.Handlers[eventType].Add(subscription);
+            
+            if (aggregateId != Guid.Empty)
+            {
+                Log($"Registered routed handler for {eventType.Name} (ID: {aggregateId})");
+            }
+            else
+            {
+                Log($"Registered handler for {eventType.Name}");
+            }
+        }
+
+        [System.Obsolete("Use RegisterHandler instead. This method is provided for backwards compatibility.")]
+        public static void RegisterStaticHandler<T>(Action<T> handler, IDispatcher? dispatcher = null) where T : class
+        {
+            RegisterHandler(handler, Guid.Empty, dispatcher);
         }
 
         public void Shutdown()
