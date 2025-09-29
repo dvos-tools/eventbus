@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/dvos-tools/eventbus/compare/v1.1.0...v1.2.0) (2025-09-29)
+
+
+### Features
+
+* fixing namespaces ([cf33554](https://github.com/dvos-tools/eventbus/commit/cf335540a9651ff2af5edeec266055b5ecb679ba))
+
 # [1.1.0](https://github.com/dvos-tools/eventbus/compare/v1.0.2...v1.1.0) (2025-09-23)
 
 

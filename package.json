@@ -1,6 +1,6 @@
 {
   "name": "com.dvos-tools.bus",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "displayName": "EventBus",
   "description": "A event bus system for Unity with automatic thread management using multiple dispatcher options.",
   "unity": "6000.0",
