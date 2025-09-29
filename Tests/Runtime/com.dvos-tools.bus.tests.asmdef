@@ -1,0 +1,19 @@
+{
+    "name": "com.dvos-tools.bus.Tests",
+    "rootNamespace": "com.DvosTools.bus",
+    "references": [
+        "com.dvos-tools.bus"
+    ],
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
