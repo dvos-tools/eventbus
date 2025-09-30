@@ -12,5 +12,13 @@ namespace com.DvosTools.bus.Dispatchers
                 Task.Run(action);
             }
         }
+
+        public void DispatchAndWait(Action? action)
+        {
+            if (action != null)
+            {
+                Task.Run(action).Wait();
+            }
+        }
     }
 }

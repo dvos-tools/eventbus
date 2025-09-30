@@ -8,5 +8,10 @@ namespace com.DvosTools.bus.Dispatchers
         {
             action?.Invoke();
         }
+
+        public void DispatchAndWait(Action? action)
+        {
+            action?.Invoke();
+        }
     }
 }

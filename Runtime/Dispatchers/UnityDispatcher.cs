@@ -49,5 +49,20 @@ namespace com.DvosTools.bus.Dispatchers
             }
         }
 
+        public void DispatchAndWait(Action? action)
+        {
+            if (_mainThreadContext != null)
+            {
+                // Use SynchronizationContext to send (synchronous) to the main thread
+                _mainThreadContext.Send(_ => action?.Invoke(), null);
+            }
+            else
+            {
+                _mainThreadContext = SynchronizationContext.Current;
+                // Fallback to immediate execution if no context
+                action?.Invoke();
+            }
+        }
+
     }
 }

@@ -104,14 +104,17 @@ This allows multiple instances of the same handler class to receive events for d
 - `Instance.Send<T>(T eventData)` - Send event asynchronously  
 - `Instance.SendAndWait<T>(T eventData)` - Send event synchronously
 - `Instance.Shutdown()` - Cleanup resources
-- `EnableLogging` - Static property to enable/disable debug logging (default: false)
+- `EventBusLogger.EnableLogging` - Static property to enable/disable debug logging (default: true in editor, false in production builds)
 
 **Note:** `RegisterStaticHandler` is provided for backwards compatibility but is marked as obsolete. It internally calls `RegisterHandler` with `Guid.Empty`. For new code, use `RegisterHandler` instead.
 
 ### Dispatchers
-- **UnityDispatcher**: Main thread execution
-- **ThreadPoolDispatcher**: Background thread execution  
-- **ImmediateDispatcher**: Immediate execution
+
+| Dispatcher | Execution | FIFO Order | SendAndWait Support | Use Case |
+|------------|-----------|------------|-------------------|----------|
+| **UnityDispatcher** | Asynchronous | ✅ Maintains Order | ✅ Waits for main thread | Unity main thread, ordered processing |
+| **ThreadPoolDispatcher** | Asynchronous | ❌ No Order Guarantee | ✅ Waits for thread pool | Background processing, high throughput |
+| **ImmediateDispatcher** | Synchronous | ✅ Maintains Order | ✅ Immediate execution | Immediate processing, order critical |
 
 ## Development Workflow
 
