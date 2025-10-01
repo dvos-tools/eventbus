@@ -26,7 +26,7 @@ namespace com.DvosTools.bus
 
         /// <summary>
         /// Creates a RoutedQueuedEvent from a regular QueuedEvent.
-        /// If the event implements IRoutableEvent, extracts the aggregate ID.
+        /// If the event implements IRoutableEvent, extract the aggregate ID.
         /// </summary>
         public static RoutedQueuedEvent FromQueuedEvent(QueuedEvent queuedEvent)
         {
