@@ -1,3 +1,11 @@
+# [1.3.0](https://github.com/dvos-tools/eventbus/compare/v1.2.0...v1.3.0) (2025-10-01)
+
+
+### Features
+
+* buffered events with tests ([7260b2b](https://github.com/dvos-tools/eventbus/commit/7260b2b2d1ac9f7c0379ea9af02cc2155cdc649f))
+* now with buffering, working sendAndWait, runtime AggregateReady and improved logging with Tests ([b7eca88](https://github.com/dvos-tools/eventbus/commit/b7eca88f0a73a43be3ebf0229d32104d2a1d2c7a))
+
 # [1.2.0](https://github.com/dvos-tools/eventbus/compare/v1.1.0...v1.2.0) (2025-09-29)
 
 
