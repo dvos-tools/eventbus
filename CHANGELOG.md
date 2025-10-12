@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/dvos-tools/eventbus/compare/v1.3.0...v1.4.0) (2025-10-12)
+
+
+### Features
+
+* removed package-lock.json and package-lock.json.meta ([3b2c053](https://github.com/dvos-tools/eventbus/commit/3b2c05379689d57a7fd73d2f91dcff579b9be7cb))
+
 # [1.3.0](https://github.com/dvos-tools/eventbus/compare/v1.2.0...v1.3.0) (2025-10-01)
 
 
