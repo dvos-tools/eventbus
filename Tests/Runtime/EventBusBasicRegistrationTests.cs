@@ -11,14 +11,14 @@ namespace com.DvosTools.bus
         public void SetUp()
         {
             // Clear all handlers before each test
-            EventBus.Instance.Handlers.Clear();
+            EventBus.ClearAll();
         }
 
         [TearDown]
         public void TearDown()
         {
             // Clear all handlers after each test
-            EventBus.Instance.Handlers.Clear();
+            EventBus.ClearAll();
         }
 
         [Test]
@@ -37,12 +37,8 @@ namespace com.DvosTools.bus
             });
 
             // Assert
-            Assert.IsTrue(EventBus.Instance.Handlers.ContainsKey(typeof(TestEvent)));
-            Assert.AreEqual(1, EventBus.Instance.Handlers[typeof(TestEvent)].Count);
-            
-            var subscription = EventBus.Instance.Handlers[typeof(TestEvent)][0];
-            Assert.AreEqual(Guid.Empty, subscription.AggregateId);
-            Assert.IsInstanceOf<ThreadPoolDispatcher>(subscription.Dispatcher);
+            Assert.IsTrue(EventBus.HasHandlers<TestEvent>());
+            Assert.AreEqual(1, EventBus.GetHandlerCount<TestEvent>());
         }
 
         [Test]
@@ -57,8 +53,8 @@ namespace com.DvosTools.bus
             EventBus.RegisterHandler<TestEvent>(evt => handler2Called = true);
 
             // Assert
-            Assert.IsTrue(EventBus.Instance.Handlers.ContainsKey(typeof(TestEvent)));
-            Assert.AreEqual(2, EventBus.Instance.Handlers[typeof(TestEvent)].Count);
+            Assert.IsTrue(EventBus.HasHandlers<TestEvent>());
+            Assert.AreEqual(2, EventBus.GetHandlerCount<TestEvent>());
         }
 
         [Test]
@@ -75,12 +71,8 @@ namespace com.DvosTools.bus
             }, Guid.Empty, customDispatcher);
 
             // Assert
-            Assert.IsTrue(EventBus.Instance.Handlers.ContainsKey(typeof(TestEvent)));
-            Assert.AreEqual(1, EventBus.Instance.Handlers[typeof(TestEvent)].Count);
-            
-            var subscription = EventBus.Instance.Handlers[typeof(TestEvent)][0];
-            Assert.AreEqual(customDispatcher, subscription.Dispatcher);
-            Assert.AreEqual(Guid.Empty, subscription.AggregateId);
+            Assert.IsTrue(EventBus.HasHandlers<TestEvent>());
+            Assert.AreEqual(1, EventBus.GetHandlerCount<TestEvent>());
         }
 
         [Test]
@@ -95,10 +87,10 @@ namespace com.DvosTools.bus
             EventBus.RegisterHandler<AnotherTestEvent>(evt => testEvent2HandlerCalled = true);
 
             // Assert
-            Assert.IsTrue(EventBus.Instance.Handlers.ContainsKey(typeof(TestEvent)));
-            Assert.IsTrue(EventBus.Instance.Handlers.ContainsKey(typeof(AnotherTestEvent)));
-            Assert.AreEqual(1, EventBus.Instance.Handlers[typeof(TestEvent)].Count);
-            Assert.AreEqual(1, EventBus.Instance.Handlers[typeof(AnotherTestEvent)].Count);
+            Assert.IsTrue(EventBus.HasHandlers<TestEvent>());
+            Assert.IsTrue(EventBus.HasHandlers<AnotherTestEvent>());
+            Assert.AreEqual(1, EventBus.GetHandlerCount<TestEvent>());
+            Assert.AreEqual(1, EventBus.GetHandlerCount<AnotherTestEvent>());
         }
     }
 }

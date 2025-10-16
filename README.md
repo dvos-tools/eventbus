@@ -48,11 +48,11 @@ void OnHealthChanged(PlayerHealthChangedEvent evt)
 }
 
 // Send events
-EventBus.Instance.Send(new PlayerDiedEvent { PlayerName = "Player1", Score = 1000 });
-EventBus.Instance.Send(new PlayerHealthChangedEvent { AggregateId = playerId, NewHealth = 80 });
+EventBus.Send(new PlayerDiedEvent { PlayerName = "Player1", Score = 1000 });
+EventBus.Send(new PlayerHealthChangedEvent { AggregateId = playerId, NewHealth = 80 });
 
 // Process buffered events when ready
-EventBus.Instance.AggregateReady(playerId);
+EventBus.AggregateReady(playerId);
 ```
 
 ## API

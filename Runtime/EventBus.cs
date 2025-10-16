@@ -1,335 +1,454 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
+using com.DvosTools.bus.Core;
 using com.DvosTools.bus.Dispatchers;
 
 namespace com.DvosTools.bus
 {
-    public class EventBus
+    /// <summary>
+    /// Central event communication hub for Unity applications.
+    /// 
+    /// The EventBus enables loose coupling between game systems by allowing any component to publish events
+    /// that other components can subscribe to. Events can be sent immediately or buffered until specific
+    /// game objects (aggregates) are ready to process them.
+    /// 
+    /// Key capabilities:
+    /// - Publish events that any number of subscribers can receive
+    /// - Route events to specific game objects using aggregate IDs
+    /// - Buffer events until game objects are ready to handle them
+    /// - Execute event handlers on different threads (main thread, background, or immediate)
+    /// - Maintain event order and ensure thread safety
+    /// 
+    /// This is the primary interface for all event communication in your Unity project.
+    /// </summary>
+    public static class EventBus
     {
-        private static EventBus? _instance;
-        public readonly Dictionary<Type, List<Subscription>> Handlers = new();
-        public readonly Queue<QueuedEvent> EventQueue = new();
-        public readonly Dictionary<Guid, Queue<QueuedEvent>> BufferedEvents = new();
-        public readonly object QueueLock = new();
-        private readonly object _bufferedEventsLock = new();
-        private readonly CancellationTokenSource _cancellationTokenSource = new();
-        
-        // Maximum number of events to process in one batch before yielding
-        private const int MaxBatchSize = 100;
-        
+        private static readonly EventBusCore CoreEventBus = EventBusCore.Instance;
 
-        public static EventBus Instance => _instance ??= new EventBus();
+        /// <summary>
+        /// Gets the EventBus instance. This is provided for backwards compatibility.
+        /// Prefer using the static methods directly (e.g., EventBus.Send() instead of EventBus.Instance.Send()).
+        /// </summary>
+        [Obsolete("The instance API is deprecated.")]
+        public static EventBusInstance Instance => new EventBusInstance();
 
-        private EventBus()
+        // ===== CORE API =====
+
+        /// <summary>
+        /// Publishes an event to all registered subscribers.
+        /// 
+        /// This method queues the event for processing and returns immediately. All handlers
+        /// registered for this event type will be notified asynchronously. For routed events
+        /// (implementing IRoutableEvent), only handlers registered for the specific aggregate
+        /// will receive the event.
+        /// 
+        /// Use this for fire-and-forget event publishing where you don't need to wait for
+        /// handlers to complete.
+        /// </summary>
+        /// <typeparam name="T">The type of event to send</typeparam>
+        /// <param name="eventData">The event data to send</param>
+        public static void Send<T>(T eventData) where T : class
         {
-            _ = Task.Run(ProcessEventQueueAsync, _cancellationTokenSource.Token); // Start the background queue processor
+            CoreEventBus.Send(eventData);
         }
 
-
-        public void Send<T>(T eventData) where T : class
+        /// <summary>
+        /// Publishes an event and waits for all handlers to complete processing.
+        /// 
+        /// This method blocks the current thread until all registered handlers have finished
+        /// executing. This is useful when you need to ensure that all side effects of an event
+        /// have been processed before continuing with your code.
+        /// 
+        /// Use this for critical events where you need guaranteed processing order or when
+        /// the next operation depends on the event being fully handled.
+        /// </summary>
+        /// <typeparam name="T">The type of event to send</typeparam>
+        /// <param name="eventData">The event data to send</param>
+        public static void SendAndWait<T>(T eventData) where T : class
         {
-            var queuedEvent = new QueuedEvent(eventData, typeof(T), DateTime.UtcNow);
-            var routedEvent = RoutedQueuedEvent.FromQueuedEvent(queuedEvent);
-            
-            // Handle non-routed events (no aggregate ID)
-            if (routedEvent.AggregateId == Guid.Empty)
-            {
-                QueueEvent(queuedEvent, typeof(T).Name);
-                return;
-            }
-            
-            // Handle routed events - check if handler exists
-            if (HasHandlerForAggregate(typeof(T), routedEvent.AggregateId))
-            {
-                QueueEvent(queuedEvent, typeof(T).Name);
-                return;
-            }
-            
-            // No handler found - buffer the event
-            BufferEvent(queuedEvent, routedEvent.AggregateId, typeof(T).Name);
+            CoreEventBus.SendAndWait(eventData);
         }
 
-        private bool HasHandlerForAggregate(Type eventType, Guid aggregateId)
-        {
-            if (!Handlers.TryGetValue(eventType, out var handlerInfos))
-                return false;
-                
-            return handlerInfos.Any(handler => handler.AggregateId == aggregateId);
-        }
-
-        private void QueueEvent(QueuedEvent queuedEvent, string eventTypeName)
-        {
-            lock (QueueLock)
-                EventQueue.Enqueue(queuedEvent);
-            
-            EventBusLogger.Log($"Queued {eventTypeName}");
-        }
-
-        private void BufferEvent(QueuedEvent queuedEvent, Guid aggregateId, string eventTypeName)
-        {
-            lock (_bufferedEventsLock)
-            {
-                if (!BufferedEvents.ContainsKey(aggregateId))
-                    BufferedEvents[aggregateId] = new Queue<QueuedEvent>();
-                
-                BufferedEvents[aggregateId].Enqueue(queuedEvent);
-            }
-            
-            EventBusLogger.Log($"Buffered {eventTypeName} for aggregate ID {aggregateId} (no handler available)");
-        }
-
-
-        private async Task ProcessEventQueueAsync()
-        {
-            while (!_cancellationTokenSource.Token.IsCancellationRequested)
-            {
-                try
-                {
-                    var eventsToProcess = new List<QueuedEvent>();
-                    
-                    // Collect up to MaxBatchSize events
-                    lock (QueueLock)
-                    {
-                        var count = Math.Min(EventQueue.Count, MaxBatchSize);
-                        for (int i = 0; i < count; i++)
-                            if (EventQueue.Count > 0)
-                                eventsToProcess.Add(EventQueue.Dequeue());
-                    }
-
-                    if (eventsToProcess.Count > 0)
-                    {
-                        foreach (var eventToProcess in eventsToProcess)
-                            ProcessEvent(eventToProcess);
-                    }
-                    else await Task.Yield();
-                }
-                catch (OperationCanceledException)
-                {
-                    break; // Expected when cancellation is requested
-                }
-                catch (Exception ex)
-                {
-                    EventBusLogger.LogError($"Queue processor error: {ex.Message}");
-                }
-            }
-        }
-
-        private void ProcessEvent(QueuedEvent queuedEvent)
-        {
-            var routedEvent = RoutedQueuedEvent.FromQueuedEvent(queuedEvent);
-            
-            if (Handlers.TryGetValue(queuedEvent.EventType, out var handlerInfos))
-            {
-                foreach (var handlerInfo in handlerInfos)
-                    ProcessHandler(handlerInfo, queuedEvent.EventData, queuedEvent.EventType.Name, routedEvent.AggregateId);
-            }
-            else 
-                EventBusLogger.LogWarning($"No handlers for {queuedEvent.EventType.Name}");
-        }
-
-        private void ProcessHandler(Subscription subscription, object eventData, string eventTypeName, Guid eventAggregateId)
-        {
-            // Check if this handler has an aggregate ID requirement
-            if (subscription.AggregateId != Guid.Empty)
-            {
-                // only process if aggregate IDs match
-                if (eventAggregateId != Guid.Empty && subscription.AggregateId == eventAggregateId)
-                    ExecuteRoutedHandler(subscription, eventData, eventTypeName, eventAggregateId);
-                
-                return;
-            }
-
-            // This is a regular handler - process all events
-            ExecuteHandler(subscription, eventData, eventTypeName);
-        }
-
-        private void ExecuteHandler(Subscription subscription, object eventData, string eventTypeName)
-        {
-            try
-            {
-                subscription.Dispatcher.Dispatch(() => subscription.Handler(eventData));
-            }
-            catch (Exception ex)
-            {
-                EventBusLogger.LogError($"Handler error for {eventTypeName}: {ex.Message}");
-            }
-        }
-
-        private void ExecuteRoutedHandler(Subscription subscription, object eventData, string eventTypeName, Guid aggregateId)
-        {
-            try
-            {
-                subscription.Dispatcher.Dispatch(() => subscription.Handler(eventData));
-            }
-            catch (Exception ex)
-            {
-                EventBusLogger.LogError($"Routed handler error for {eventTypeName} (ID: {aggregateId}): {ex.Message}");
-            }
-        }
-
-        private void ExecuteHandlerAndWait(Subscription subscription, object eventData, string eventTypeName)
-        {
-            try
-            {
-                subscription.Dispatcher.DispatchAndWait(() => subscription.Handler(eventData));
-            }
-            catch (Exception ex)
-            {
-                EventBusLogger.LogError($"Handler error for {eventTypeName}: {ex.Message}");
-            }
-        }
-
-        private void ExecuteRoutedHandlerAndWait(Subscription subscription, object eventData, string eventTypeName, Guid aggregateId)
-        {
-            try
-            {
-                subscription.Dispatcher.DispatchAndWait(() => subscription.Handler(eventData));
-            }
-            catch (Exception ex)
-            {
-                EventBusLogger.LogError($"Routed handler error for {eventTypeName} (ID: {aggregateId}): {ex.Message}");
-            }
-        }
-
-        public void SendAndWait<T>(T eventData) where T : class
-        {
-            var eventType = typeof(T);
-            var routedEvent = RoutedQueuedEvent.FromQueuedEvent(new QueuedEvent(eventData, eventType));
-
-            if (Handlers.TryGetValue(eventType, out var handlerInfos))
-            {
-                foreach (var handlerInfo in handlerInfos)
-                    ProcessHandlerAndWait(handlerInfo, eventData, eventType.Name, routedEvent.AggregateId);
-            }
-            else 
-                EventBusLogger.LogWarning($"No handlers for {eventType.Name}");
-        }
-
-        private void ProcessHandlerAndWait(Subscription subscription, object eventData, string eventTypeName, Guid eventAggregateId)
-        {
-            // Check if this handler has an aggregate ID requirement
-            if (subscription.AggregateId != Guid.Empty)
-            {
-                // only process if aggregate IDs match
-                if (eventAggregateId != Guid.Empty && subscription.AggregateId == eventAggregateId)
-                    ExecuteRoutedHandlerAndWait(subscription, eventData, eventTypeName, eventAggregateId);
-                
-                return;
-            }
-
-            // This is a regular handler - process all events
-            ExecuteHandlerAndWait(subscription, eventData, eventTypeName);
-        }
-
-        public void AggregateReady(Guid aggregateId)
-        {
-            if (aggregateId == Guid.Empty)
-            {
-                EventBusLogger.LogWarning("Cannot mark empty aggregate ID as ready");
-                return;
-            }
-
-            var eventsToProcess = ExtractBufferedEvents(aggregateId);
-            if (eventsToProcess.Count == 0)
-            {
-                EventBusLogger.Log($"No buffered events found for aggregate ID {aggregateId}");
-                return;
-            }
-
-            ProcessBufferedEvents(eventsToProcess, aggregateId);
-        }
-
-        private List<QueuedEvent> ExtractBufferedEvents(Guid aggregateId)
-        {
-            lock (_bufferedEventsLock)
-            {
-                if (!BufferedEvents.TryGetValue(aggregateId, out var bufferedQueue))
-                    return new List<QueuedEvent>();
-
-                var eventsToProcess = new List<QueuedEvent>();
-                while (bufferedQueue.Count > 0)
-                {
-                    eventsToProcess.Add(bufferedQueue.Dequeue());
-                }
-                
-                BufferedEvents.Remove(aggregateId);
-                return eventsToProcess;
-            }
-        }
-
-        private void ProcessBufferedEvents(List<QueuedEvent> eventsToProcess, Guid aggregateId)
-        {
-            // Queue the events for processing by the background queue processor
-            // This ensures they go through the same processing flow as normal events
-            lock (QueueLock)
-            {
-                foreach (var eventToProcess in eventsToProcess)
-                {
-                    EventQueue.Enqueue(eventToProcess);
-                }
-            }
-            
-            EventBusLogger.Log($"Queued {eventsToProcess.Count} buffered events for processing (aggregate ID: {aggregateId})");
-        }
-
-
-        public int GetBufferedEventCount(Guid aggregateId)
-        {
-            lock (_bufferedEventsLock)
-            {
-                return BufferedEvents.TryGetValue(aggregateId, out var bufferedQueue) ? bufferedQueue.Count : 0;
-            }
-        }
-
-        public IEnumerable<Guid> GetBufferedAggregateIds()
-        {
-            lock (_bufferedEventsLock)
-            {
-                return BufferedEvents.Keys.ToList();
-            }
-        }
-
-        public int GetTotalBufferedEventCount()
-        {
-            lock (_bufferedEventsLock)
-            {
-                return BufferedEvents.Values.Sum(queue => queue.Count);
-            }
-        }
-
+        /// <summary>
+        /// Subscribes to receive events of a specific type.
+        /// 
+        /// When an event of the specified type is published, your handler function will be called.
+        /// You can register multiple handlers for the same event type - they will all be notified.
+        /// 
+        /// For routed events (implementing IRoutableEvent), specify an aggregateId to only
+        /// receive events for that specific game object. Use Guid.Empty for global handlers
+        /// that receive all events of this type regardless of routing.
+        /// 
+        /// The dispatcher determines which thread your handler runs on.
+        /// </summary>
+        /// <typeparam name="T">The type of event to handle</typeparam>
+        /// <param name="handler">The function to call when this event is received</param>
+        /// <param name="aggregateId">Game object ID for routed events, or Guid.Empty for global handlers</param>
+        /// <param name="dispatcher">Which thread to run the handler on (defaults to background thread)</param>
         public static void RegisterHandler<T>(Action<T> handler, Guid aggregateId = default, IDispatcher? dispatcher = null) where T : class
         {
-            var eventType = typeof(T);
-            var wrapper = new Action<object>(obj => handler((T)obj));
-            
-            var customDispatcher = dispatcher ?? new ThreadPoolDispatcher();
-            var subscription = new Subscription(wrapper, customDispatcher, aggregateId);
-
-            if (!Instance.Handlers.ContainsKey(eventType))
-                Instance.Handlers[eventType] = new List<Subscription>();
-
-            Instance.Handlers[eventType].Add(subscription);
-
-            EventBusLogger.Log(aggregateId != Guid.Empty
-                ? $"Registered routed handler for {eventType.Name} (ID: {aggregateId})"
-                : $"Registered handler for {eventType.Name}");
+            EventBusCore.RegisterHandler(handler, aggregateId, dispatcher);
         }
 
-        [Obsolete("Use RegisterHandler instead. This method is provided for backwards compatibility.")]
-        public static void RegisterStaticHandler<T>(Action<T> handler, IDispatcher? dispatcher = null) where T : class
+        /// <summary>
+        /// Unregisters all handlers for a specific event type.
+        /// </summary>
+        /// <typeparam name="T">The type of event to unregister</typeparam>
+        public static void UnregisterHandlers<T>() where T : class
+        {
+            var eventType = typeof(T);
+            if (CoreEventBus.Handlers.TryGetValue(eventType, out var handler))
+            {
+                handler.Clear();
+            }
+        }
+
+        /// <summary>
+        /// Unregisters all handlers for all event types.
+        /// </summary>
+        public static void UnregisterAllHandlers()
+        {
+            CoreEventBus.Handlers.Clear();
+        }
+
+        /// <summary>
+        /// Clears all handlers, buffered events, and queued events.
+        /// This is useful for test cleanup.
+        /// </summary>
+        public static void ClearAll()
+        {
+            CoreEventBus.ClearAll();
+        }
+
+        /// <summary>
+        /// Signals that a game object is ready to process its buffered events.
+        /// 
+        /// When you send routed events to game objects that aren't ready yet, those events
+        /// get buffered. Call this method when the game object is initialized and ready to
+        /// handle events. All buffered events for this aggregate will be processed immediately.
+        /// 
+        /// This is essential for proper event ordering - events sent before an object is
+        /// ready will be processed in the correct order once it becomes ready.
+        /// </summary>
+        /// <param name="aggregateId">The game object ID that is now ready to process events</param>
+        public static void AggregateReady(Guid aggregateId)
+        {
+            CoreEventBus.AggregateReady(aggregateId);
+        }
+
+        /// <summary>
+        /// Gets the number of buffered events for a specific aggregate.
+        /// </summary>
+        /// <param name="aggregateId">The aggregate ID to check</param>
+        /// <returns>The number of buffered events</returns>
+        public static int GetBufferedEventCount(Guid aggregateId)
+        {
+            return CoreEventBus.GetBufferedEventCount(aggregateId);
+        }
+
+        /// <summary>
+        /// Gets all aggregate IDs that have buffered events.
+        /// </summary>
+        /// <returns>Collection of aggregate IDs with buffered events</returns>
+        public static IEnumerable<Guid> GetBufferedAggregateIds()
+        {
+            return CoreEventBus.GetBufferedAggregateIds();
+        }
+
+        /// <summary>
+        /// Gets the total number of buffered events across all aggregates.
+        /// </summary>
+        /// <returns>Total number of buffered events</returns>
+        public static int GetTotalBufferedEventCount()
+        {
+            return CoreEventBus.GetTotalBufferedEventCount();
+        }
+
+        /// <summary>
+        /// Gets the number of events currently in the processing queue.
+        /// </summary>
+        /// <returns>Number of events in the queue</returns>
+        public static int GetQueueCount()
+        {
+            lock (CoreEventBus.QueueLock)
+            {
+                return CoreEventBus.EventQueue.Count;
+            }
+        }
+
+        /// <summary>
+        /// Gets the number of registered handlers for a specific event type.
+        /// </summary>
+        /// <typeparam name="T">The type of event to check</typeparam>
+        /// <returns>Number of registered handlers</returns>
+        public static int GetHandlerCount<T>() where T : class
+        {
+            var eventType = typeof(T);
+            return CoreEventBus.Handlers.TryGetValue(eventType, out var handlers) ? handlers.Count : 0;
+        }
+
+        /// <summary>
+        /// Checks if there are any handlers registered for a specific event type.
+        /// </summary>
+        /// <typeparam name="T">The type of event to check</typeparam>
+        /// <returns>True if handlers are registered, false otherwise</returns>
+        public static bool HasHandlers<T>() where T : class
+        {
+            return GetHandlerCount<T>() > 0;
+        }
+
+        /// <summary>
+        /// Shuts down the event bus, cancelling background processing.
+        /// </summary>
+        public static void Shutdown()
+        {
+            CoreEventBus.Shutdown();
+        }
+
+        // ===== CONVENIENCE METHODS =====
+
+        /// <summary>
+        /// Subscribes to events with handlers that run on Unity's main thread.
+        /// 
+        /// Use this when your handler needs to access Unity APIs (GameObjects, Components, etc.)
+        /// or when you need to update the UI. All Unity API calls must happen on the main thread.
+        /// 
+        /// This is the most common choice for game logic handlers that interact with Unity objects.
+        /// </summary>
+        /// <typeparam name="T">The type of event to handle</typeparam>
+        /// <param name="handler">The function to call when this event is received</param>
+        /// <param name="aggregateId">Game object ID for routed events, or Guid.Empty for global handlers</param>
+        public static void RegisterUnityHandler<T>(Action<T> handler, Guid aggregateId = default) where T : class
+        {
+            RegisterHandler(handler, aggregateId, UnityDispatcher.Instance);
+        }
+
+        /// <summary>
+        /// Subscribes to events with handlers that execute immediately on the current thread.
+        /// 
+        /// Use this for synchronous event processing where you need the handler to complete
+        /// before the event sender continues. This blocks the sender until the handler finishes.
+        /// 
+        /// Good for critical event processing or when you need guaranteed immediate execution.
+        /// </summary>
+        /// <typeparam name="T">The type of event to handle</typeparam>
+        /// <param name="handler">The function to call when this event is received</param>
+        /// <param name="aggregateId">Game object ID for routed events, or Guid.Empty for global handlers</param>
+        public static void RegisterImmediateHandler<T>(Action<T> handler, Guid aggregateId = default) where T : class
+        {
+            RegisterHandler(handler, aggregateId, new ImmediateDispatcher());
+        }
+
+        /// <summary>
+        /// Subscribes to events with handlers that run on background threads.
+        /// 
+        /// Use this for CPU-intensive processing, file I/O, network operations, or any work
+        /// that doesn't need to access Unity APIs. This keeps the main thread responsive.
+        /// 
+        /// Perfect for data processing, analytics, or any heavy computation triggered by events.
+        /// </summary>
+        /// <typeparam name="T">The type of event to handle</typeparam>
+        /// <param name="handler">The function to call when this event is received</param>
+        /// <param name="aggregateId">Game object ID for routed events, or Guid.Empty for global handlers</param>
+        public static void RegisterBackgroundHandler<T>(Action<T> handler, Guid aggregateId = default) where T : class
+        {
+            RegisterHandler(handler, aggregateId, new ThreadPoolDispatcher());
+        }
+
+        /// <summary>
+        /// Registers a handler with a specific aggregate ID for routed events.
+        /// This is a convenience method for the common case of routing events.
+        /// </summary>
+        /// <typeparam name="T">The type of event to handle</typeparam>
+        /// <param name="handler">The handler function</param>
+        /// <param name="aggregateId">The aggregate ID for routing</param>
+        /// <param name="dispatcher">Optional dispatcher for handling the event</param>
+        public static void RegisterRoutedHandler<T>(Action<T> handler, Guid aggregateId, IDispatcher? dispatcher = null) where T : class
+        {
+            if (aggregateId == Guid.Empty)
+                throw new ArgumentException("Aggregate ID cannot be empty for routed handlers", nameof(aggregateId));
+                
+            RegisterHandler(handler, aggregateId, dispatcher);
+        }
+
+        /// <summary>
+        /// Registers a global handler that will receive all events of the specified type.
+        /// This is a convenience method for non-routed events.
+        /// </summary>
+        /// <typeparam name="T">The type of event to handle</typeparam>
+        /// <param name="handler">The handler function</param>
+        /// <param name="dispatcher">Optional dispatcher for handling the event</param>
+        public static void RegisterGlobalHandler<T>(Action<T> handler, IDispatcher? dispatcher = null) where T : class
         {
             RegisterHandler(handler, Guid.Empty, dispatcher);
         }
 
-        public void Shutdown()
+        /// <summary>
+        /// Checks if there are any buffered events for any aggregate.
+        /// </summary>
+        /// <returns>True if there are any buffered events, false otherwise</returns>
+        public static bool HasBufferedEvents()
         {
-            _cancellationTokenSource.Cancel();
-            _cancellationTokenSource.Dispose();
+            return GetTotalBufferedEventCount() > 0;
         }
 
+        /// <summary>
+        /// Checks if there are any events currently in the processing queue.
+        /// </summary>
+        /// <returns>True if there are events in the queue, false otherwise</returns>
+        public static bool HasQueuedEvents()
+        {
+            return GetQueueCount() > 0;
+        }
+    }
+
+    /// <summary>
+    /// Wrapper class for backwards compatibility with the instance API.
+    /// </summary>
+    [Obsolete("The instance API is deprecated.")]
+    public class EventBusInstance
+    {
+        /// <summary>
+        /// Sends an event asynchronously. The event will be queued and processed by registered handlers.
+        /// </summary>
+        /// <typeparam name="T">The type of event to send</typeparam>
+        /// <param name="eventData">The event data to send</param>
+        [Obsolete("Use EventBus.Send() instead of EventBus.Instance.Send(). The instance API is deprecated.")]
+        public void Send<T>(T eventData) where T : class
+        {
+            EventBus.Send(eventData);
+        }
+
+        /// <summary>
+        /// Sends an event synchronously and waits for all handlers to complete.
+        /// Use this when you need to ensure the event is fully processed before continuing.
+        /// </summary>
+        /// <typeparam name="T">The type of event to send</typeparam>
+        /// <param name="eventData">The event data to send</param>
+        [Obsolete("Use EventBus.SendAndWait() instead of EventBus.Instance.SendAndWait(). The instance API is deprecated.")]
+        public void SendAndWait<T>(T eventData) where T : class
+        {
+            EventBus.SendAndWait(eventData);
+        }
+
+        /// <summary>
+        /// Marks an aggregate as ready, processing any buffered events for that aggregate.
+        /// </summary>
+        /// <param name="aggregateId">The aggregate ID to mark as ready</param>
+        [Obsolete("Use EventBus.AggregateReady() instead of EventBus.Instance.AggregateReady(). The instance API is deprecated.")]
+        public void AggregateReady(Guid aggregateId)
+        {
+            EventBus.AggregateReady(aggregateId);
+        }
+
+        /// <summary>
+        /// Gets the number of buffered events for a specific aggregate.
+        /// </summary>
+        /// <param name="aggregateId">The aggregate ID to check</param>
+        /// <returns>The number of buffered events</returns>
+        [Obsolete("Use EventBus.GetBufferedEventCount() instead of EventBus.Instance.GetBufferedEventCount(). The instance API is deprecated.")]
+        public int GetBufferedEventCount(Guid aggregateId)
+        {
+            return EventBus.GetBufferedEventCount(aggregateId);
+        }
+
+        /// <summary>
+        /// Gets all aggregate IDs that have buffered events.
+        /// </summary>
+        /// <returns>Collection of aggregate IDs with buffered events</returns>
+        [Obsolete("Use EventBus.GetBufferedAggregateIds() instead of EventBus.Instance.GetBufferedAggregateIds(). The instance API is deprecated.")]
+        public IEnumerable<Guid> GetBufferedAggregateIds()
+        {
+            return EventBus.GetBufferedAggregateIds();
+        }
+
+        /// <summary>
+        /// Gets the total number of buffered events across all aggregates.
+        /// </summary>
+        /// <returns>Total number of buffered events</returns>
+        [Obsolete("Use EventBus.GetTotalBufferedEventCount() instead of EventBus.Instance.GetTotalBufferedEventCount(). The instance API is deprecated.")]
+        public int GetTotalBufferedEventCount()
+        {
+            return EventBus.GetTotalBufferedEventCount();
+        }
+
+        /// <summary>
+        /// Gets the number of events currently in the processing queue.
+        /// </summary>
+        /// <returns>Number of events in the queue</returns>
+        [Obsolete("Use EventBus.GetQueueCount() instead of EventBus.Instance.GetQueueCount(). The instance API is deprecated.")]
+        public int GetQueueCount()
+        {
+            return EventBus.GetQueueCount();
+        }
+
+        /// <summary>
+        /// Gets the number of registered handlers for a specific event type.
+        /// </summary>
+        /// <typeparam name="T">The type of event to check</typeparam>
+        /// <returns>Number of registered handlers</returns>
+        [Obsolete("Use EventBus.GetHandlerCount() instead of EventBus.Instance.GetHandlerCount(). The instance API is deprecated.")]
+        public int GetHandlerCount<T>() where T : class
+        {
+            return EventBus.GetHandlerCount<T>();
+        }
+
+        /// <summary>
+        /// Checks if there are any handlers registered for a specific event type.
+        /// </summary>
+        /// <typeparam name="T">The type of event to check</typeparam>
+        /// <returns>True if handlers are registered, false otherwise</returns>
+        [Obsolete("Use EventBus.HasHandlers() instead of EventBus.Instance.HasHandlers(). The instance API is deprecated.")]
+        public bool HasHandlers<T>() where T : class
+        {
+            return EventBus.HasHandlers<T>();
+        }
+
+        /// <summary>
+        /// Registers a global handler for events of a specific type.
+        /// 
+        /// This method is deprecated. Use EventBus.RegisterGlobalHandler or EventBus.RegisterHandler instead.
+        /// This method registers handlers that receive all events of the specified type
+        /// regardless of routing (equivalent to RegisterHandler with Guid.Empty).
+        /// </summary>
+        /// <typeparam name="T">The type of event to handle</typeparam>
+        /// <param name="handler">The function to call when this event is received</param>
+        /// <param name="dispatcher">Which thread to run the handler on (defaults to background thread)</param>
+        [Obsolete("Use EventBus.RegisterGlobalHandler or EventBus.RegisterHandler instead. The instance API is deprecated and this method will be removed in a future version.")]
+        public void RegisterStaticHandler<T>(Action<T> handler, IDispatcher? dispatcher = null) where T : class
+        {
+            EventBusCore.RegisterStaticHandler(handler, dispatcher);
+        }
+
+        /// <summary>
+        /// Shuts down the event bus, cancelling background processing.
+        /// </summary>
+        [Obsolete("Use EventBus.Shutdown() instead of EventBus.Instance.Shutdown(). The instance API is deprecated.")]
+        public void Shutdown()
+        {
+            EventBus.Shutdown();
+        }
+
+        /// <summary>
+        /// Direct access to handlers for backwards compatibility.
+        /// Consider using GetHandlerCount() and HasHandlers() instead.
+        /// </summary>
+        [Obsolete("Direct access to Handlers is deprecated. Use EventBus.GetHandlerCount() and EventBus.HasHandlers() instead.")]
+        public Dictionary<Type, List<Subscription>> Handlers => EventBusCore.Instance.Handlers;
+
+        /// <summary>
+        /// Direct access to even queue for backwards compatibility.
+        /// Consider using GetQueueCount() and HasQueuedEvents() instead.
+        /// </summary>
+        [Obsolete("Direct access to EventQueue is deprecated. Use EventBus.GetQueueCount() and EventBus.HasQueuedEvents() instead.")]
+        public Queue<QueuedEvent> EventQueue => EventBusCore.Instance.EventQueue;
+
+        /// <summary>
+        /// Direct access to queue lock for backwards compatibility.
+        /// Consider using the static API methods instead.
+        /// </summary>
+        [Obsolete("Direct access to QueueLock is deprecated. Use the static API methods instead.")]
+        public object QueueLock => EventBusCore.Instance.QueueLock;
     }
 }

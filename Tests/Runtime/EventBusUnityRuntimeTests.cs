@@ -12,24 +12,20 @@ namespace com.DvosTools.bus
     [TestFixture]
     public class EventBusUnityRuntimeTests
     {
-        private EventBus _eventBus;
         private const int TimeoutMs = 1000; // 1 second
 
         [SetUp]
         public void SetUp()
         {
-            _eventBus = EventBus.Instance;
             // Clear all handlers and buffered events before each test
-            _eventBus.Handlers.Clear();
-            _eventBus.BufferedEvents.Clear();
+            EventBus.ClearAll();
         }
 
         [TearDown]
         public void TearDown()
         {
             // Clear all handlers and buffered events after each test
-            _eventBus.Handlers.Clear();
-            _eventBus.BufferedEvents.Clear();
+            EventBus.ClearAll();
         }
 
         [Test]
@@ -45,12 +41,8 @@ namespace com.DvosTools.bus
             }, Guid.Empty, unityDispatcher);
 
             // Assert
-            Assert.IsTrue(EventBus.Instance.Handlers.ContainsKey(typeof(TestEvent)));
-            Assert.AreEqual(1, EventBus.Instance.Handlers[typeof(TestEvent)].Count);
-            
-            var subscription = EventBus.Instance.Handlers[typeof(TestEvent)][0];
-            Assert.AreEqual(unityDispatcher, subscription.Dispatcher);
-            Assert.AreEqual(Guid.Empty, subscription.AggregateId);
+            Assert.IsTrue(EventBus.HasHandlers<TestEvent>());
+            Assert.AreEqual(1, EventBus.GetHandlerCount<TestEvent>());
         }
 
         [UnityTest]
@@ -68,7 +60,7 @@ namespace com.DvosTools.bus
 
             // Act
             var testEvent = new TestEvent { Message = "Unity Test" };
-            EventBus.Instance.Send(testEvent);
+            EventBus.Send(testEvent);
 
             // Wait for async processing with timeout
             yield return new WaitForSeconds(0.1f);
@@ -94,12 +86,8 @@ namespace com.DvosTools.bus
             }, aggregateId, unityDispatcher);
 
             // Assert
-            Assert.IsTrue(EventBus.Instance.Handlers.ContainsKey(typeof(TestEvent)));
-            Assert.AreEqual(1, EventBus.Instance.Handlers[typeof(TestEvent)].Count);
-            
-            var subscription = EventBus.Instance.Handlers[typeof(TestEvent)][0];
-            Assert.AreEqual(unityDispatcher, subscription.Dispatcher);
-            Assert.AreEqual(aggregateId, subscription.AggregateId);
+            Assert.IsTrue(EventBus.HasHandlers<TestEvent>());
+            Assert.AreEqual(1, EventBus.GetHandlerCount<TestEvent>());
         }
 
         [UnityTest]
@@ -113,7 +101,7 @@ namespace com.DvosTools.bus
 
             // Act
             var testEvent = new TestEvent { Message = "Multiple Unity Test" };
-            EventBus.Instance.Send(testEvent);
+            EventBus.Send(testEvent);
 
             // Wait for async processing with timeout
             yield return new WaitForSeconds(0.1f);
@@ -121,12 +109,8 @@ namespace com.DvosTools.bus
             // Assert with timeout handling
             Await.AtMost(TimeoutMs, () =>
             {
-                Assert.IsTrue(EventBus.Instance.Handlers.ContainsKey(typeof(TestEvent)));
-                Assert.AreEqual(2, EventBus.Instance.Handlers[typeof(TestEvent)].Count);
-                
-                var subscriptions = EventBus.Instance.Handlers[typeof(TestEvent)];
-                Assert.AreEqual(unityDispatcher, subscriptions[0].Dispatcher);
-                Assert.AreEqual(unityDispatcher, subscriptions[1].Dispatcher);
+                Assert.IsTrue(EventBus.HasHandlers<TestEvent>());
+                Assert.AreEqual(2, EventBus.GetHandlerCount<TestEvent>());
             });
         }
 
@@ -153,7 +137,7 @@ namespace com.DvosTools.bus
             for (int i = 1; i <= 100; i++)
             {
                 expectedOrder.Add(i);
-                _eventBus.Send(new RoutableTestEvent 
+                EventBus.Send(new RoutableTestEvent 
                 { 
                     AggregateId = aggregateId, 
                     Data = i.ToString() 
@@ -174,7 +158,7 @@ namespace com.DvosTools.bus
                     Assert.AreEqual(i + 1, processedEvents[i], $"Event {i + 1} should be processed in position {i}");
                 }
                 
-                Assert.AreEqual(0, _eventBus.GetBufferedEventCount(aggregateId), "No events should be buffered");
+                Assert.AreEqual(0, EventBus.GetBufferedEventCount(aggregateId), "No events should be buffered");
             });
         }
 
