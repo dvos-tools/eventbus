@@ -7,8 +7,20 @@ using com.DvosTools.bus.Dispatchers;
 namespace com.DvosTools.bus
 {
     /// <summary>
-    /// Main static API for the Event Bus system.
-    /// Provides a clean, easy-to-use interface for event publishing, subscription, and management.
+    /// Central event communication hub for Unity applications.
+    /// 
+    /// The EventBus enables loose coupling between game systems by allowing any component to publish events
+    /// that other components can subscribe to. Events can be sent immediately or buffered until specific
+    /// game objects (aggregates) are ready to process them.
+    /// 
+    /// Key capabilities:
+    /// - Publish events that any number of subscribers can receive
+    /// - Route events to specific game objects using aggregate IDs
+    /// - Buffer events until game objects are ready to handle them
+    /// - Execute event handlers on different threads (main thread, background, or immediate)
+    /// - Maintain event order and ensure thread safety
+    /// 
+    /// This is the primary interface for all event communication in your Unity project.
     /// </summary>
     public static class EventBus
     {
@@ -18,12 +30,21 @@ namespace com.DvosTools.bus
         /// Gets the EventBus instance. This is provided for backwards compatibility.
         /// Prefer using the static methods directly (e.g., EventBus.Send() instead of EventBus.Instance.Send()).
         /// </summary>
+        [Obsolete("The instance API is deprecated.")]
         public static EventBusInstance Instance => new EventBusInstance();
 
         // ===== CORE API =====
 
         /// <summary>
-        /// Sends an event asynchronously. The event will be queued and processed by registered handlers.
+        /// Publishes an event to all registered subscribers.
+        /// 
+        /// This method queues the event for processing and returns immediately. All handlers
+        /// registered for this event type will be notified asynchronously. For routed events
+        /// (implementing IRoutableEvent), only handlers registered for the specific aggregate
+        /// will receive the event.
+        /// 
+        /// Use this for fire-and-forget event publishing where you don't need to wait for
+        /// handlers to complete.
         /// </summary>
         /// <typeparam name="T">The type of event to send</typeparam>
         /// <param name="eventData">The event data to send</param>
@@ -33,8 +54,14 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Sends an event synchronously and waits for all handlers to complete.
-        /// Use this when you need to ensure the event is fully processed before continuing.
+        /// Publishes an event and waits for all handlers to complete processing.
+        /// 
+        /// This method blocks the current thread until all registered handlers have finished
+        /// executing. This is useful when you need to ensure that all side effects of an event
+        /// have been processed before continuing with your code.
+        /// 
+        /// Use this for critical events where you need guaranteed processing order or when
+        /// the next operation depends on the event being fully handled.
         /// </summary>
         /// <typeparam name="T">The type of event to send</typeparam>
         /// <param name="eventData">The event data to send</param>
@@ -44,12 +71,21 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Registers a handler for a specific event type.
+        /// Subscribes to receive events of a specific type.
+        /// 
+        /// When an event of the specified type is published, your handler function will be called.
+        /// You can register multiple handlers for the same event type - they will all be notified.
+        /// 
+        /// For routed events (implementing IRoutableEvent), specify an aggregateId to only
+        /// receive events for that specific game object. Use Guid.Empty for global handlers
+        /// that receive all events of this type regardless of routing.
+        /// 
+        /// The dispatcher determines which thread your handler runs on.
         /// </summary>
         /// <typeparam name="T">The type of event to handle</typeparam>
-        /// <param name="handler">The handler function to execute when the event is received</param>
-        /// <param name="aggregateId">Optional aggregate ID for routed events. Use Guid.Empty for global handlers</param>
-        /// <param name="dispatcher">Optional dispatcher for handling the event. Uses ThreadPoolDispatcher by default</param>
+        /// <param name="handler">The function to call when this event is received</param>
+        /// <param name="aggregateId">Game object ID for routed events, or Guid.Empty for global handlers</param>
+        /// <param name="dispatcher">Which thread to run the handler on (defaults to background thread)</param>
         public static void RegisterHandler<T>(Action<T> handler, Guid aggregateId = default, IDispatcher? dispatcher = null) where T : class
         {
             EventBusCore.RegisterHandler(handler, aggregateId, dispatcher);
@@ -86,9 +122,16 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Marks an aggregate as ready, processing any buffered events for that aggregate.
+        /// Signals that a game object is ready to process its buffered events.
+        /// 
+        /// When you send routed events to game objects that aren't ready yet, those events
+        /// get buffered. Call this method when the game object is initialized and ready to
+        /// handle events. All buffered events for this aggregate will be processed immediately.
+        /// 
+        /// This is essential for proper event ordering - events sent before an object is
+        /// ready will be processed in the correct order once it becomes ready.
         /// </summary>
-        /// <param name="aggregateId">The aggregate ID to mark as ready</param>
+        /// <param name="aggregateId">The game object ID that is now ready to process events</param>
         public static void AggregateReady(Guid aggregateId)
         {
             CoreEventBus.AggregateReady(aggregateId);
@@ -166,33 +209,48 @@ namespace com.DvosTools.bus
         // ===== CONVENIENCE METHODS =====
 
         /// <summary>
-        /// Registers a handler that will be called on the Unity main thread.
+        /// Subscribes to events with handlers that run on Unity's main thread.
+        /// 
+        /// Use this when your handler needs to access Unity APIs (GameObjects, Components, etc.)
+        /// or when you need to update the UI. All Unity API calls must happen on the main thread.
+        /// 
+        /// This is the most common choice for game logic handlers that interact with Unity objects.
         /// </summary>
         /// <typeparam name="T">The type of event to handle</typeparam>
-        /// <param name="handler">The handler function</param>
-        /// <param name="aggregateId">Optional aggregate ID for routed events</param>
+        /// <param name="handler">The function to call when this event is received</param>
+        /// <param name="aggregateId">Game object ID for routed events, or Guid.Empty for global handlers</param>
         public static void RegisterUnityHandler<T>(Action<T> handler, Guid aggregateId = default) where T : class
         {
             RegisterHandler(handler, aggregateId, UnityDispatcher.Instance);
         }
 
         /// <summary>
-        /// Registers a handler that will be called immediately on the current thread.
+        /// Subscribes to events with handlers that execute immediately on the current thread.
+        /// 
+        /// Use this for synchronous event processing where you need the handler to complete
+        /// before the event sender continues. This blocks the sender until the handler finishes.
+        /// 
+        /// Good for critical event processing or when you need guaranteed immediate execution.
         /// </summary>
         /// <typeparam name="T">The type of event to handle</typeparam>
-        /// <param name="handler">The handler function</param>
-        /// <param name="aggregateId">Optional aggregate ID for routed events</param>
+        /// <param name="handler">The function to call when this event is received</param>
+        /// <param name="aggregateId">Game object ID for routed events, or Guid.Empty for global handlers</param>
         public static void RegisterImmediateHandler<T>(Action<T> handler, Guid aggregateId = default) where T : class
         {
             RegisterHandler(handler, aggregateId, new ImmediateDispatcher());
         }
 
         /// <summary>
-        /// Registers a handler that will be called on a background thread pool thread.
+        /// Subscribes to events with handlers that run on background threads.
+        /// 
+        /// Use this for CPU-intensive processing, file I/O, network operations, or any work
+        /// that doesn't need to access Unity APIs. This keeps the main thread responsive.
+        /// 
+        /// Perfect for data processing, analytics, or any heavy computation triggered by events.
         /// </summary>
         /// <typeparam name="T">The type of event to handle</typeparam>
-        /// <param name="handler">The handler function</param>
-        /// <param name="aggregateId">Optional aggregate ID for routed events</param>
+        /// <param name="handler">The function to call when this event is received</param>
+        /// <param name="aggregateId">Game object ID for routed events, or Guid.Empty for global handlers</param>
         public static void RegisterBackgroundHandler<T>(Action<T> handler, Guid aggregateId = default) where T : class
         {
             RegisterHandler(handler, aggregateId, new ThreadPoolDispatcher());
@@ -248,6 +306,7 @@ namespace com.DvosTools.bus
     /// <summary>
     /// Wrapper class for backwards compatibility with the instance API.
     /// </summary>
+    [Obsolete("The instance API is deprecated.")]
     public class EventBusInstance
     {
         /// <summary>
@@ -344,6 +403,22 @@ namespace com.DvosTools.bus
         public bool HasHandlers<T>() where T : class
         {
             return EventBus.HasHandlers<T>();
+        }
+
+        /// <summary>
+        /// Registers a global handler for events of a specific type.
+        /// 
+        /// This method is deprecated. Use EventBus.RegisterGlobalHandler or EventBus.RegisterHandler instead.
+        /// This method registers handlers that receive all events of the specified type
+        /// regardless of routing (equivalent to RegisterHandler with Guid.Empty).
+        /// </summary>
+        /// <typeparam name="T">The type of event to handle</typeparam>
+        /// <param name="handler">The function to call when this event is received</param>
+        /// <param name="dispatcher">Which thread to run the handler on (defaults to background thread)</param>
+        [Obsolete("Use EventBus.RegisterGlobalHandler or EventBus.RegisterHandler instead. The instance API is deprecated and this method will be removed in a future version.")]
+        public void RegisterStaticHandler<T>(Action<T> handler, IDispatcher? dispatcher = null) where T : class
+        {
+            EventBusCore.RegisterStaticHandler(handler, dispatcher);
         }
 
         /// <summary>
