@@ -13,24 +13,20 @@ namespace com.DvosTools.bus
     [TestFixture]
     public class EventBusAsyncBufferingTests
     {
-        private EventBus _eventBus;
         private const int TimeoutMs = 1000; // 1 second
 
         [SetUp]
         public void SetUp()
         {
-            _eventBus = EventBus.Instance;
             // Clear all handlers and buffered events before each test
-            _eventBus.Handlers.Clear();
-            _eventBus.BufferedEvents.Clear();
+            EventBus.UnregisterAllHandlers();
         }
 
         [TearDown]
         public void TearDown()
         {
             // Clear all handlers and buffered events after each test
-            _eventBus.Handlers.Clear();
-            _eventBus.BufferedEvents.Clear();
+            EventBus.UnregisterAllHandlers();
         }
 
 
@@ -50,14 +46,14 @@ namespace com.DvosTools.bus
             }, aggregateId, new ThreadPoolDispatcher());
 
             // Act
-            _eventBus.Send(testEvent);
+            EventBus.Send(testEvent);
 
             // Assert - Wait for async processing
             Await.AtMost(TimeoutMs, () =>
             {
                 Assert.IsTrue(handlerCalled, "Handler should have been called");
                 Assert.AreEqual(1, handlerCallCount, "Handler should have been called exactly once");
-                Assert.AreEqual(0, _eventBus.GetBufferedEventCount(aggregateId), "Event should not be buffered");
+                Assert.AreEqual(0, EventBus.GetBufferedEventCount(aggregateId), "Event should not be buffered");
             });
         }
 
@@ -72,8 +68,8 @@ namespace com.DvosTools.bus
             var handlerCalledCount = 0;
             var receivedData = new List<string>();
 
-            _eventBus.Send(event1);
-            _eventBus.Send(event2);
+            EventBus.Send(event1);
+            EventBus.Send(event2);
 
             EventBus.RegisterHandler<RoutableTestEvent>(evt => 
             {
@@ -82,7 +78,7 @@ namespace com.DvosTools.bus
             }, aggregateId, new ThreadPoolDispatcher());
 
             // Act
-            EventBus.Instance.AggregateReady(aggregateId);
+            EventBus.AggregateReady(aggregateId);
 
             // Assert - Wait for async processing
             Await.AtMost(TimeoutMs, () =>
@@ -90,8 +86,8 @@ namespace com.DvosTools.bus
                 Assert.AreEqual(2, handlerCalledCount, "Handler should have been called twice");
                 Assert.Contains("Event 1", receivedData, "Should have received Event 1");
                 Assert.Contains("Event 2", receivedData, "Should have received Event 2");
-                Assert.AreEqual(0, _eventBus.GetBufferedEventCount(aggregateId), "No events should be buffered");
-                Assert.AreEqual(0, _eventBus.GetTotalBufferedEventCount(), "No events should be buffered");
+                Assert.AreEqual(0, EventBus.GetBufferedEventCount(aggregateId), "No events should be buffered");
+                Assert.AreEqual(0, EventBus.GetTotalBufferedEventCount(), "No events should be buffered");
             });
         }
 
@@ -105,15 +101,15 @@ namespace com.DvosTools.bus
             var event3 = new RoutableTestEvent { AggregateId = aggregateId, Data = "Third" };
             var processedOrder = new List<string>();
 
-            _eventBus.Send(event1);
-            _eventBus.Send(event2);
-            _eventBus.Send(event3);
+            EventBus.Send(event1);
+            EventBus.Send(event2);
+            EventBus.Send(event3);
 
             // Use ImmediateDispatcher to guarantee FIFO order processing
             EventBus.RegisterHandler<RoutableTestEvent>(evt => processedOrder.Add(evt.Data), aggregateId, new ImmediateDispatcher());
 
             // Act
-            EventBus.Instance.AggregateReady(aggregateId);
+            EventBus.AggregateReady(aggregateId);
 
             // Assert - Wait for async processing with ImmediateDispatcher
             Await.AtMost(TimeoutMs, () =>
@@ -135,15 +131,15 @@ namespace com.DvosTools.bus
             var event3 = new RoutableTestEvent { AggregateId = aggregateId, Data = "Third" };
             var processedOrder = new List<string>();
 
-            _eventBus.Send(event1);
-            _eventBus.Send(event2);
-            _eventBus.Send(event3);
+            EventBus.Send(event1);
+            EventBus.Send(event2);
+            EventBus.Send(event3);
 
             // Use UnityDispatcher - should maintain FIFO order while being asynchronous
             EventBus.RegisterHandler<RoutableTestEvent>(evt => processedOrder.Add(evt.Data), aggregateId, UnityDispatcher.Instance);
 
             // Act
-            EventBus.Instance.AggregateReady(aggregateId);
+            EventBus.AggregateReady(aggregateId);
 
             // Wait for async processing on Unity main thread
             yield return new WaitForSeconds(0.1f);
@@ -165,15 +161,15 @@ namespace com.DvosTools.bus
             var event3 = new RoutableTestEvent { AggregateId = aggregateId, Data = "Event 3" };
             var receivedEvents = new List<string>();
 
-            _eventBus.Send(event1);
-            _eventBus.Send(event2);
-            _eventBus.Send(event3);
+            EventBus.Send(event1);
+            EventBus.Send(event2);
+            EventBus.Send(event3);
 
             // Use ThreadPoolDispatcher to test async behavior
             EventBus.RegisterHandler<RoutableTestEvent>(evt => receivedEvents.Add(evt.Data), aggregateId, new ThreadPoolDispatcher());
 
             // Act
-            EventBus.Instance.AggregateReady(aggregateId);
+            EventBus.AggregateReady(aggregateId);
 
             // Assert - Wait for async processing (order may vary)
             Await.AtMost(TimeoutMs, () =>
@@ -182,7 +178,7 @@ namespace com.DvosTools.bus
                 Assert.Contains("Event 1", receivedEvents, "Should have received Event 1");
                 Assert.Contains("Event 2", receivedEvents, "Should have received Event 2");
                 Assert.Contains("Event 3", receivedEvents, "Should have received Event 3");
-                Assert.AreEqual(0, _eventBus.GetBufferedEventCount(aggregateId), "No events should be buffered");
+                Assert.AreEqual(0, EventBus.GetBufferedEventCount(aggregateId), "No events should be buffered");
             });
         }
 
@@ -196,18 +192,18 @@ namespace com.DvosTools.bus
             var handlerCalledCount = 0;
 
             // Send first event (should be buffered)
-            _eventBus.Send(event1);
+            EventBus.Send(event1);
 
             // Register handler
             EventBus.RegisterHandler<RoutableTestEvent>(_ => handlerCalledCount++, aggregateId, new ThreadPoolDispatcher());
 
             // Send second event (should not be buffered)
-            _eventBus.Send(event2);
+            EventBus.Send(event2);
 
             // Assert - Wait for async processing
             Await.AtMost(TimeoutMs, () =>
             {
-                Assert.AreEqual(1, _eventBus.GetBufferedEventCount(aggregateId), "Only first event should be buffered");
+                Assert.AreEqual(1, EventBus.GetBufferedEventCount(aggregateId), "Only first event should be buffered");
                 Assert.AreEqual(1, handlerCalledCount, "Second event should have been processed");
             });
         }
@@ -223,21 +219,21 @@ namespace com.DvosTools.bus
             EventBus.RegisterHandler<RoutableTestEvent>(_ => handlerCalled = true, aggregateId, new ImmediateDispatcher());
 
             // Act
-            _eventBus.SendAndWait(testEvent);
+            EventBus.SendAndWait(testEvent);
 
             // Assert - Should be processed immediately with ImmediateDispatcher
             Assert.IsTrue(handlerCalled, "Handler should have been called immediately");
-            Assert.AreEqual(0, _eventBus.GetBufferedEventCount(aggregateId), "No events should be buffered");
+            Assert.AreEqual(0, EventBus.GetBufferedEventCount(aggregateId), "No events should be buffered");
         }
 
         [Test]
         public void MarkAggregateEventTypeReady_EmptyGuid_LogsWarning()
         {
             // Arrange & Act
-            EventBus.Instance.AggregateReady(Guid.Empty);
+            EventBus.AggregateReady(Guid.Empty);
 
             // Assert
-            Assert.AreEqual(0, _eventBus.GetTotalBufferedEventCount());
+            Assert.AreEqual(0, EventBus.GetTotalBufferedEventCount());
         }
 
         [Test]
@@ -247,7 +243,7 @@ namespace com.DvosTools.bus
             var nonExistentId = Guid.NewGuid();
 
             // Act
-            var count = _eventBus.GetBufferedEventCount(nonExistentId);
+            var count = EventBus.GetBufferedEventCount(nonExistentId);
 
             // Assert
             Assert.AreEqual(0, count);
@@ -257,7 +253,7 @@ namespace com.DvosTools.bus
         public void GetBufferedAggregateIds_NoBufferedEvents_ReturnsEmptyCollection()
         {
             // Act
-            var ids = _eventBus.GetBufferedAggregateIds();
+            var ids = EventBus.GetBufferedAggregateIds();
 
             // Assert
             Assert.IsEmpty(ids);
@@ -267,7 +263,7 @@ namespace com.DvosTools.bus
         public void GetTotalBufferedEventCount_NoBufferedEvents_ReturnsZero()
         {
             // Act
-            var count = _eventBus.GetTotalBufferedEventCount();
+            var count = EventBus.GetTotalBufferedEventCount();
 
             // Assert
             Assert.AreEqual(0, count);

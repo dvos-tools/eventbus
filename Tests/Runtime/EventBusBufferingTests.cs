@@ -9,24 +9,20 @@ namespace com.DvosTools.bus
     [TestFixture]
     public class EventBusBufferingTests
     {
-        private EventBus _eventBus;
         private const int TimeoutMs = 1000; // 1 second
 
         [SetUp]
         public void SetUp()
         {
-            _eventBus = EventBus.Instance;
             // Clear all handlers and buffered events before each test
-            _eventBus.Handlers.Clear();
-            _eventBus.BufferedEvents.Clear();
+            EventBus.UnregisterAllHandlers();
         }
 
         [TearDown]
         public void TearDown()
         {
             // Clear all handlers and buffered events after each test
-            _eventBus.Handlers.Clear();
-            _eventBus.BufferedEvents.Clear();
+            EventBus.UnregisterAllHandlers();
         }
 
         [Test]
@@ -37,12 +33,12 @@ namespace com.DvosTools.bus
             var testEvent = new RoutableTestEvent { AggregateId = aggregateId, Data = "Test Data" };
 
             // Act
-            _eventBus.Send(testEvent);
+            EventBus.Send(testEvent);
 
             // Assert
-            Assert.AreEqual(1, _eventBus.GetBufferedEventCount(aggregateId));
-            Assert.AreEqual(1, _eventBus.GetTotalBufferedEventCount());
-            Assert.Contains(aggregateId, _eventBus.GetBufferedAggregateIds().ToList());
+            Assert.AreEqual(1, EventBus.GetBufferedEventCount(aggregateId));
+            Assert.AreEqual(1, EventBus.GetTotalBufferedEventCount());
+            Assert.Contains(aggregateId, EventBus.GetBufferedAggregateIds().ToList());
         }
 
         [Test]
@@ -56,12 +52,12 @@ namespace com.DvosTools.bus
             EventBus.RegisterHandler<RoutableTestEvent>(evt => handlerCalled = true, aggregateId);
 
             // Act
-            _eventBus.Send(testEvent);
+            EventBus.Send(testEvent);
 
             // Assert
-            Assert.AreEqual(0, _eventBus.GetBufferedEventCount(aggregateId));
-            Assert.AreEqual(0, _eventBus.GetTotalBufferedEventCount());
-            Assert.IsFalse(_eventBus.GetBufferedAggregateIds().Contains(aggregateId));
+            Assert.AreEqual(0, EventBus.GetBufferedEventCount(aggregateId));
+            Assert.AreEqual(0, EventBus.GetTotalBufferedEventCount());
+            Assert.IsFalse(EventBus.GetBufferedAggregateIds().Contains(aggregateId));
         }
 
         [Test]
@@ -71,11 +67,11 @@ namespace com.DvosTools.bus
             var testEvent = new TestEvent { Message = "Test Message", Value = 42 };
 
             // Act
-            _eventBus.Send(testEvent);
+            EventBus.Send(testEvent);
 
             // Assert
-            Assert.AreEqual(0, _eventBus.GetTotalBufferedEventCount());
-            Assert.IsEmpty(_eventBus.GetBufferedAggregateIds());
+            Assert.AreEqual(0, EventBus.GetTotalBufferedEventCount());
+            Assert.IsEmpty(EventBus.GetBufferedAggregateIds());
         }
 
         [Test]
@@ -88,13 +84,13 @@ namespace com.DvosTools.bus
             var event3 = new RoutableTestEvent { AggregateId = aggregateId, Data = "Event 3" };
 
             // Act
-            _eventBus.Send(event1);
-            _eventBus.Send(event2);
-            _eventBus.Send(event3);
+            EventBus.Send(event1);
+            EventBus.Send(event2);
+            EventBus.Send(event3);
 
             // Assert
-            Assert.AreEqual(3, _eventBus.GetBufferedEventCount(aggregateId));
-            Assert.AreEqual(3, _eventBus.GetTotalBufferedEventCount());
+            Assert.AreEqual(3, EventBus.GetBufferedEventCount(aggregateId));
+            Assert.AreEqual(3, EventBus.GetTotalBufferedEventCount());
         }
 
         [Test]
@@ -108,16 +104,16 @@ namespace com.DvosTools.bus
             var event3 = new RoutableTestEvent { AggregateId = aggregateId1, Data = "Event 3" };
 
             // Act
-            _eventBus.Send(event1);
-            _eventBus.Send(event2);
-            _eventBus.Send(event3);
+            EventBus.Send(event1);
+            EventBus.Send(event2);
+            EventBus.Send(event3);
 
             // Assert
-            Assert.AreEqual(2, _eventBus.GetBufferedEventCount(aggregateId1));
-            Assert.AreEqual(1, _eventBus.GetBufferedEventCount(aggregateId2));
-            Assert.AreEqual(3, _eventBus.GetTotalBufferedEventCount());
+            Assert.AreEqual(2, EventBus.GetBufferedEventCount(aggregateId1));
+            Assert.AreEqual(1, EventBus.GetBufferedEventCount(aggregateId2));
+            Assert.AreEqual(3, EventBus.GetTotalBufferedEventCount());
             
-            var bufferedIds = _eventBus.GetBufferedAggregateIds().ToList();
+            var bufferedIds = EventBus.GetBufferedAggregateIds().ToList();
             Assert.Contains(aggregateId1, bufferedIds);
             Assert.Contains(aggregateId2, bufferedIds);
             Assert.AreEqual(2, bufferedIds.Count);
@@ -133,8 +129,8 @@ namespace com.DvosTools.bus
             var handlerCalledCount = 0;
             var receivedData = new System.Collections.Generic.List<string>();
 
-            _eventBus.Send(event1);
-            _eventBus.Send(event2);
+            EventBus.Send(event1);
+            EventBus.Send(event2);
 
             EventBus.RegisterHandler<RoutableTestEvent>(evt => 
             {
@@ -143,7 +139,7 @@ namespace com.DvosTools.bus
             }, aggregateId, new ImmediateDispatcher());
 
             // Act
-            EventBus.Instance.AggregateReady(aggregateId);
+            EventBus.AggregateReady(aggregateId);
 
             // Assert - Wait for async processing
             Await.AtMost(TimeoutMs, () =>
@@ -151,8 +147,8 @@ namespace com.DvosTools.bus
                 Assert.AreEqual(2, handlerCalledCount);
                 Assert.Contains("Event 1", receivedData);
                 Assert.Contains("Event 2", receivedData);
-                Assert.AreEqual(0, _eventBus.GetBufferedEventCount(aggregateId));
-                Assert.AreEqual(0, _eventBus.GetTotalBufferedEventCount());
+                Assert.AreEqual(0, EventBus.GetBufferedEventCount(aggregateId));
+                Assert.AreEqual(0, EventBus.GetTotalBufferedEventCount());
             });
         }
 
@@ -166,21 +162,21 @@ namespace com.DvosTools.bus
             EventBus.RegisterHandler<RoutableTestEvent>(evt => handlerCalled = true, aggregateId, new ImmediateDispatcher());
 
             // Act
-            EventBus.Instance.AggregateReady(aggregateId);
+            EventBus.AggregateReady(aggregateId);
 
             // Assert
             Assert.IsFalse(handlerCalled);
-            Assert.AreEqual(0, _eventBus.GetBufferedEventCount(aggregateId));
+            Assert.AreEqual(0, EventBus.GetBufferedEventCount(aggregateId));
         }
 
         [Test]
         public void MarkAggregateEventTypeReady_EmptyGuid_LogsWarning()
         {
             // Arrange & Act
-            EventBus.Instance.AggregateReady(Guid.Empty);
+            EventBus.AggregateReady(Guid.Empty);
 
             // Assert
-            Assert.AreEqual(0, _eventBus.GetTotalBufferedEventCount());
+            Assert.AreEqual(0, EventBus.GetTotalBufferedEventCount());
         }
 
         [Test]
@@ -193,14 +189,14 @@ namespace com.DvosTools.bus
             var event3 = new RoutableTestEvent { AggregateId = aggregateId, Data = "Third" };
             var processedOrder = new System.Collections.Generic.List<string>();
 
-            _eventBus.Send(event1);
-            _eventBus.Send(event2);
-            _eventBus.Send(event3);
+            EventBus.Send(event1);
+            EventBus.Send(event2);
+            EventBus.Send(event3);
 
             EventBus.RegisterHandler<RoutableTestEvent>(evt => processedOrder.Add(evt.Data), aggregateId, new ImmediateDispatcher());
 
             // Act
-            EventBus.Instance.AggregateReady(aggregateId);
+            EventBus.AggregateReady(aggregateId);
 
             // Assert - Wait for async processing
             Await.AtMost(TimeoutMs, () =>
@@ -220,11 +216,11 @@ namespace com.DvosTools.bus
             var testEvent = new RoutableTestEvent { AggregateId = aggregateId, Data = "Test Data" };
 
             // Act & Assert - Should not throw exception
-            _eventBus.SendAndWait(testEvent);
+            EventBus.SendAndWait(testEvent);
 
             // Assert - No buffering should occur with SendAndWait
-            Assert.AreEqual(0, _eventBus.GetBufferedEventCount(aggregateId));
-            Assert.AreEqual(0, _eventBus.GetTotalBufferedEventCount());
+            Assert.AreEqual(0, EventBus.GetBufferedEventCount(aggregateId));
+            Assert.AreEqual(0, EventBus.GetTotalBufferedEventCount());
         }
 
         [Test]
@@ -236,12 +232,12 @@ namespace com.DvosTools.bus
             var nonRoutableEvent = new TestEvent { Message = "Non-Routable", Value = 42 };
 
             // Act
-            _eventBus.Send(routableEvent);
-            _eventBus.Send(nonRoutableEvent);
+            EventBus.Send(routableEvent);
+            EventBus.Send(nonRoutableEvent);
 
             // Assert
-            Assert.AreEqual(1, _eventBus.GetBufferedEventCount(aggregateId));
-            Assert.AreEqual(1, _eventBus.GetTotalBufferedEventCount());
+            Assert.AreEqual(1, EventBus.GetBufferedEventCount(aggregateId));
+            Assert.AreEqual(1, EventBus.GetTotalBufferedEventCount());
         }
 
         [Test]
@@ -251,7 +247,7 @@ namespace com.DvosTools.bus
             var nonExistentId = Guid.NewGuid();
 
             // Act
-            var count = _eventBus.GetBufferedEventCount(nonExistentId);
+            var count = EventBus.GetBufferedEventCount(nonExistentId);
 
             // Assert
             Assert.AreEqual(0, count);
@@ -261,7 +257,7 @@ namespace com.DvosTools.bus
         public void GetBufferedAggregateIds_NoBufferedEvents_ReturnsEmptyCollection()
         {
             // Act
-            var ids = _eventBus.GetBufferedAggregateIds();
+            var ids = EventBus.GetBufferedAggregateIds();
 
             // Assert
             Assert.IsEmpty(ids);
@@ -271,7 +267,7 @@ namespace com.DvosTools.bus
         public void GetTotalBufferedEventCount_NoBufferedEvents_ReturnsZero()
         {
             // Act
-            var count = _eventBus.GetTotalBufferedEventCount();
+            var count = EventBus.GetTotalBufferedEventCount();
 
             // Assert
             Assert.AreEqual(0, count);
@@ -287,16 +283,16 @@ namespace com.DvosTools.bus
             var handlerCalledCount = 0;
 
             // Send first event (should be buffered)
-            _eventBus.Send(event1);
+            EventBus.Send(event1);
 
             // Register handler
             EventBus.RegisterHandler<RoutableTestEvent>(evt => handlerCalledCount++, aggregateId, new ImmediateDispatcher());
 
             // Send second event (should not be buffered)
-            _eventBus.SendAndWait(event2);
+            EventBus.SendAndWait(event2);
 
             // Assert
-            Assert.AreEqual(1, _eventBus.GetBufferedEventCount(aggregateId)); // Only first event
+            Assert.AreEqual(1, EventBus.GetBufferedEventCount(aggregateId)); // Only first event
             Assert.AreEqual(1, handlerCalledCount); // Second event was processed immediately
         }
 
