@@ -11,14 +11,14 @@ namespace com.DvosTools.bus
         public void SetUp()
         {
             // Clear all handlers before each test
-            EventBus.UnregisterAllHandlers();
+            EventBus.ClearAll();
         }
 
         [TearDown]
         public void TearDown()
         {
             // Clear all handlers after each test
-            EventBus.UnregisterAllHandlers();
+            EventBus.ClearAll();
         }
 
         [Test]

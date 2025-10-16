@@ -19,14 +19,14 @@ namespace com.DvosTools.bus
         public void SetUp()
         {
             // Clear all handlers and buffered events before each test
-            EventBus.UnregisterAllHandlers();
+            EventBus.ClearAll();
         }
 
         [TearDown]
         public void TearDown()
         {
             // Clear all handlers and buffered events after each test
-            EventBus.UnregisterAllHandlers();
+            EventBus.ClearAll();
         }
 
 

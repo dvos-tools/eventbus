@@ -16,7 +16,7 @@ namespace com.DvosTools.bus.Core
         public readonly Dictionary<Guid, Queue<QueuedEvent>> BufferedEvents = new();
         public readonly object QueueLock = new();
         private readonly object _bufferedEventsLock = new();
-        private readonly CancellationTokenSource _cancellationTokenSource = new();
+        private CancellationTokenSource _cancellationTokenSource = new();
         
         // Maximum number of events to process in one batch before yielding
         private const int MaxBatchSize = 100;
@@ -26,6 +26,7 @@ namespace com.DvosTools.bus.Core
 
         private EventBusCore()
         {
+            _cancellationTokenSource = new CancellationTokenSource();
             _ = Task.Run(ProcessEventQueueAsync, _cancellationTokenSource.Token); // Start the background queue processor
         }
 
@@ -330,8 +331,49 @@ namespace com.DvosTools.bus.Core
 
         public void Shutdown()
         {
-            _cancellationTokenSource.Cancel();
+            try
+            {
+                if (!_cancellationTokenSource.IsCancellationRequested)
+                {
+                    _cancellationTokenSource.Cancel();
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // Already disposed, ignore
+            }
+        }
+
+        public void ClearAll()
+        {
+            // Clear handlers
+            Handlers.Clear();
+            
+            // Clear buffered events
+            lock (_bufferedEventsLock)
+            {
+                BufferedEvents.Clear();
+            }
+            
+            // Clear event queue
+            lock (QueueLock)
+            {
+                EventQueue.Clear();
+            }
+            
+            // Reset the background task to ensure it's running properly
+            ResetBackgroundTask();
+        }
+
+        public void ResetBackgroundTask()
+        {
+            // Cancel the current background task
+            Shutdown();
+            
+            // Create a new CancellationTokenSource and restart the background task
             _cancellationTokenSource.Dispose();
+            _cancellationTokenSource = new CancellationTokenSource();
+            _ = Task.Run(ProcessEventQueueAsync, _cancellationTokenSource.Token);
         }
 
     }

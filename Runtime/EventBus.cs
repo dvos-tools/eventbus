@@ -77,6 +77,15 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
+        /// Clears all handlers, buffered events, and queued events.
+        /// This is useful for test cleanup.
+        /// </summary>
+        public static void ClearAll()
+        {
+            CoreEventBus.ClearAll();
+        }
+
+        /// <summary>
         /// Marks an aggregate as ready, processing any buffered events for that aggregate.
         /// </summary>
         /// <param name="aggregateId">The aggregate ID to mark as ready</param>
