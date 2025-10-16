@@ -1,3 +1,11 @@
+# [1.5.0](https://github.com/dvos-tools/eventbus/compare/v1.4.0...v1.5.0) (2025-10-16)
+
+
+### Features
+
+* added api layer fixes ([6545fe1](https://github.com/dvos-tools/eventbus/commit/6545fe1ba99a63c10f3de20d1e36d56a0b1faf29))
+* added api layer so you can call the EventBus staticly ([a7109f7](https://github.com/dvos-tools/eventbus/commit/a7109f7172af72e48ec14ddb7933b2c5c78746a4))
+
 # [1.4.0](https://github.com/dvos-tools/eventbus/compare/v1.3.0...v1.4.0) (2025-10-12)
 
 
