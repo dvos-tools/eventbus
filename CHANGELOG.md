@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/dvos-tools/eventbus/compare/v1.5.0...v1.6.0) (2025-10-17)
+
+
+### Features
+
+* Forgot add  EventBusCore.RegisterStaticHandle as the depricated static handler... whoeps ([b6b8e1c](https://github.com/dvos-tools/eventbus/commit/b6b8e1c228687313a317096eb42313d0d11f1232))
+
 # [1.5.0](https://github.com/dvos-tools/eventbus/compare/v1.4.0...v1.5.0) (2025-10-16)
 
 
