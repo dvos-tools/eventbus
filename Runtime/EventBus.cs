@@ -285,6 +285,22 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
+        /// Registers a global handler for events of a specific type.
+        /// 
+        /// This method is deprecated. Use RegisterGlobalHandler or RegisterHandler instead.
+        /// This method registers handlers that receive all events of the specified type
+        /// regardless of routing (equivalent to RegisterHandler with Guid.Empty).
+        /// </summary>
+        /// <typeparam name="T">The type of event to handle</typeparam>
+        /// <param name="handler">The function to call when this event is received</param>
+        /// <param name="dispatcher">Which thread to run the handler on (defaults to background thread)</param>
+        [Obsolete("Use RegisterGlobalHandler or RegisterHandler instead. This method is deprecated and will be removed in a future version.")]
+        public static void RegisterStaticHandler<T>(Action<T> handler, IDispatcher? dispatcher = null) where T : class
+        {
+            EventBusCore.RegisterStaticHandler(handler, dispatcher);
+        }
+
+        /// <summary>
         /// Checks if there are any buffered events for any aggregate.
         /// </summary>
         /// <returns>True if there are any buffered events, false otherwise</returns>
