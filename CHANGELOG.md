@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/dvos-tools/eventbus/compare/v1.6.0...v1.7.0) (2025-10-18)
+
+
+### Features
+
+* refactoring to use Service Layer logic ([5e8758e](https://github.com/dvos-tools/eventbus/commit/5e8758ebeacb727383f58aec224117af31bd9883))
+
 # [1.6.0](https://github.com/dvos-tools/eventbus/compare/v1.5.0...v1.6.0) (2025-10-17)
 
 
