@@ -25,6 +25,7 @@ namespace com.DvosTools.bus
     public static class EventBus
     {
         private static readonly EventBusCore CoreEventBus = EventBusCore.Instance;
+        private static readonly EventBusService EventBusService = EventBusCore.Service;
 
         /// <summary>
         /// Gets the EventBus instance. This is provided for backwards compatibility.
@@ -50,7 +51,7 @@ namespace com.DvosTools.bus
         /// <param name="eventData">The event data to send</param>
         public static void Send<T>(T eventData) where T : class
         {
-            CoreEventBus.Send(eventData);
+            EventBusService.Send(eventData);
         }
 
         /// <summary>
@@ -67,7 +68,7 @@ namespace com.DvosTools.bus
         /// <param name="eventData">The event data to send</param>
         public static void SendAndWait<T>(T eventData) where T : class
         {
-            CoreEventBus.SendAndWait(eventData);
+            EventBusService.SendAndWait(eventData);
         }
 
         /// <summary>
@@ -88,7 +89,7 @@ namespace com.DvosTools.bus
         /// <param name="dispatcher">Which thread to run the handler on (defaults to background thread)</param>
         public static void RegisterHandler<T>(Action<T> handler, Guid aggregateId = default, IDispatcher? dispatcher = null) where T : class
         {
-            EventBusCore.RegisterHandler(handler, aggregateId, dispatcher);
+            EventBusService.RegisterHandler(handler, aggregateId, dispatcher);
         }
 
         /// <summary>
@@ -134,7 +135,7 @@ namespace com.DvosTools.bus
         /// <param name="aggregateId">The game object ID that is now ready to process events</param>
         public static void AggregateReady(Guid aggregateId)
         {
-            CoreEventBus.AggregateReady(aggregateId);
+            EventBusService.AggregateReady(aggregateId);
         }
 
         /// <summary>
@@ -205,8 +206,6 @@ namespace com.DvosTools.bus
         {
             CoreEventBus.Shutdown();
         }
-
-        // ===== CONVENIENCE METHODS =====
 
         /// <summary>
         /// Subscribes to events with handlers that run on Unity's main thread.
@@ -297,7 +296,7 @@ namespace com.DvosTools.bus
         [Obsolete("Use RegisterGlobalHandler or RegisterHandler instead. This method is deprecated and will be removed in a future version.")]
         public static void RegisterStaticHandler<T>(Action<T> handler, IDispatcher? dispatcher = null) where T : class
         {
-            EventBusCore.RegisterStaticHandler(handler, dispatcher);
+            EventBusService.RegisterHandler(handler, Guid.Empty, dispatcher);
         }
 
         /// <summary>
@@ -434,7 +433,7 @@ namespace com.DvosTools.bus
         [Obsolete("Use EventBus.RegisterGlobalHandler or EventBus.RegisterHandler instead. The instance API is deprecated and this method will be removed in a future version.")]
         public void RegisterStaticHandler<T>(Action<T> handler, IDispatcher? dispatcher = null) where T : class
         {
-            EventBusCore.RegisterStaticHandler(handler, dispatcher);
+            EventBusService.RegisterHandler(handler, Guid.Empty, dispatcher);
         }
 
         /// <summary>
