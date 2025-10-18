@@ -5,19 +5,39 @@ namespace com.DvosTools.bus.Dispatchers
 {
     public class ThreadPoolDispatcher : IDispatcher
     {
-        public void Dispatch(Action? action)
+        public void Dispatch(Action? action, string? eventTypeName = null, Guid? aggregateId = null)
         {
             if (action != null)
             {
-                Task.Run(action);
+                try
+                {
+                    Task.Run(action);
+                }
+                catch (Exception ex)
+                {
+                    var errorMessage = aggregateId.HasValue 
+                        ? $"Routed handler error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
+                        : $"Handler error for {eventTypeName}: {ex.Message}";
+                    EventBusLogger.LogError(errorMessage);
+                }
             }
         }
 
-        public void DispatchAndWait(Action? action)
+        public void DispatchAndWait(Action? action, string? eventTypeName = null, Guid? aggregateId = null)
         {
             if (action != null)
             {
-                Task.Run(action).Wait();
+                try
+                {
+                    Task.Run(action).Wait();
+                }
+                catch (Exception ex)
+                {
+                    var errorMessage = aggregateId.HasValue 
+                        ? $"Routed handler error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
+                        : $"Handler error for {eventTypeName}: {ex.Message}";
+                    EventBusLogger.LogError(errorMessage);
+                }
             }
         }
     }

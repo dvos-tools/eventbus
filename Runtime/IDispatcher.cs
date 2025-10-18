@@ -4,7 +4,7 @@ namespace com.DvosTools.bus
 {
     public interface IDispatcher
     {
-        void Dispatch(Action? action);
-        void DispatchAndWait(Action? action);
+        void Dispatch(Action? action, string? eventTypeName = null, Guid? aggregateId = null);
+        void DispatchAndWait(Action? action, string? eventTypeName = null, Guid? aggregateId = null);
     }
 }

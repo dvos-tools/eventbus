@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 using System.Threading;
 using UnityEngine;
@@ -36,31 +37,57 @@ namespace com.DvosTools.bus.Dispatchers
             _mainThreadContext = SynchronizationContext.Current;
         }
 
-        public void Dispatch(Action? action)
+        public void Dispatch(Action? action, string? eventTypeName = null, Guid? aggregateId = null)
         {
-            if (_mainThreadContext != null)
+            if (action != null)
             {
-                // Use SynchronizationContext to post to the main thread
-                _mainThreadContext.Post(_ => action?.Invoke(), null);
-            }
-            else
-            {
-                _mainThreadContext = SynchronizationContext.Current;
+                try
+                {
+                    if (_mainThreadContext != null)
+                    {
+                        // Use SynchronizationContext to post to the main thread
+                        _mainThreadContext.Post(_ => action.Invoke(), null);
+                    }
+                    else
+                    {
+                        _mainThreadContext = SynchronizationContext.Current;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    var errorMessage = aggregateId.HasValue 
+                        ? $"Routed handler error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
+                        : $"Handler error for {eventTypeName}: {ex.Message}";
+                    EventBusLogger.LogError(errorMessage);
+                }
             }
         }
 
-        public void DispatchAndWait(Action? action)
+        public void DispatchAndWait(Action? action, string? eventTypeName = null, Guid? aggregateId = null)
         {
-            if (_mainThreadContext != null)
+            if (action != null)
             {
-                // Use SynchronizationContext to send (synchronous) to the main thread
-                _mainThreadContext.Send(_ => action?.Invoke(), null);
-            }
-            else
-            {
-                _mainThreadContext = SynchronizationContext.Current;
-                // Fallback to immediate execution if no context
-                action?.Invoke();
+                try
+                {
+                    if (_mainThreadContext != null)
+                    {
+                        // Use SynchronizationContext to send (synchronous) to the main thread
+                        _mainThreadContext.Send(_ => action.Invoke(), null);
+                    }
+                    else
+                    {
+                        _mainThreadContext = SynchronizationContext.Current;
+                        // Fallback to immediate execution if no context
+                        action.Invoke();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    var errorMessage = aggregateId.HasValue 
+                        ? $"Routed handler error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
+                        : $"Handler error for {eventTypeName}: {ex.Message}";
+                    EventBusLogger.LogError(errorMessage);
+                }
             }
         }
 
