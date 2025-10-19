@@ -67,7 +67,7 @@ EventBus.AggregateReady(playerId);
 | Dispatcher               | Execution | FIFO Order  | Use Case              |
 |--------------------------|-----------|-------------|-----------------------|
 | **UnityDispatcher**      | Async     | ✅ Ordered   | Unity main thread     |
-| **ThreadPoolDispatcher** | Async     | ❌ Unordered | Background processing |
+| **ThreadPoolDispatcher** | Async     | ✅ Ordered   | Background processing |
 | **ImmediateDispatcher**  | Sync      | ✅ Ordered   | Immediate execution   |
 
 ## License
