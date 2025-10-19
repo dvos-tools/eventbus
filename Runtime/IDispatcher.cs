@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 
 namespace com.DvosTools.bus

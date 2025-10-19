@@ -141,14 +141,17 @@ namespace com.DvosTools.bus
             // Act
             EventBus.AggregateReady(aggregateId);
 
-            // Wait for async processing on Unity main thread
-            yield return new WaitForSeconds(0.1f);
+            // Wait for Unity's Update() to process the queue
+            yield return new WaitForSeconds(0.01f);
 
             // Assert - UnityDispatcher should process in FIFO order (async but ordered)
-            Assert.AreEqual(3, processedOrder.Count, "Should have processed 3 events");
-            Assert.AreEqual("First", processedOrder[0], "First event should be processed first");
-            Assert.AreEqual("Second", processedOrder[1], "Second event should be processed second");
-            Assert.AreEqual("Third", processedOrder[2], "Third event should be processed third");
+            Await.AtMost(TimeoutMs, () =>
+            {
+                Assert.AreEqual(3, processedOrder.Count, "Should have processed 3 events");
+                Assert.AreEqual("First", processedOrder[0], "First event should be processed first");
+                Assert.AreEqual("Second", processedOrder[1], "Second event should be processed second");
+                Assert.AreEqual("Third", processedOrder[2], "Third event should be processed third");
+            });
         }
 
         [Test]
@@ -172,7 +175,7 @@ namespace com.DvosTools.bus
             EventBus.AggregateReady(aggregateId);
 
             // Assert - Wait for async processing (order may vary)
-            Await.AtMost(TimeoutMs, () =>
+            Await.AtMost(2000, () =>
             {
                 Assert.AreEqual(3, receivedEvents.Count, "Should have received all 3 events");
                 Assert.Contains("Event 1", receivedEvents, "Should have received Event 1");

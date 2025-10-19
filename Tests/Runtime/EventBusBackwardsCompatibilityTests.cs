@@ -1,6 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using com.DvosTools.bus.Dispatchers;
 using NUnit.Framework;
 
@@ -44,10 +44,13 @@ namespace com.DvosTools.bus
             // Act - Use deprecated instance API
             EventBus.Instance.Send(testEvent);
 
-            // Assert
-            Assert.IsTrue(handlerCalled, "Handler should have been called via instance API");
-            Assert.IsNotNull(receivedEvent, "Received event should not be null");
-            Assert.AreEqual("Backwards Compatible Test", receivedEvent.Message);
+            // Assert - Wait for async processing
+            Await.AtMost(1000, () =>
+            {
+                Assert.IsTrue(handlerCalled, "Handler should have been called via instance API");
+                Assert.IsNotNull(receivedEvent, "Received event should not be null");
+                Assert.AreEqual("Backwards Compatible Test", receivedEvent.Message);
+            });
         }
 
         [Test]
@@ -86,9 +89,12 @@ namespace com.DvosTools.bus
             // Act - Use deprecated instance API
             EventBus.Instance.AggregateReady(aggregateId);
 
-            // Assert
-            Assert.IsTrue(handlerCalled, "Handler should have been called after AggregateReady");
-            Assert.AreEqual(0, EventBus.GetBufferedEventCount(aggregateId), "Event should no longer be buffered");
+            // Assert - Wait for async processing
+            Await.AtMost(1000, () =>
+            {
+                Assert.IsTrue(handlerCalled, "Handler should have been called after AggregateReady");
+                Assert.AreEqual(0, EventBus.GetBufferedEventCount(aggregateId), "Event should no longer be buffered");
+            });
         }
 
         [Test]
@@ -308,6 +314,35 @@ namespace com.DvosTools.bus
             Assert.AreEqual(0, EventBus.Instance.GetBufferedEventCount(aggregateId), "No events should be buffered");
             Assert.IsTrue(EventBus.Instance.HasHandlers<TestEvent>(), "Should have TestEvent handlers");
             Assert.AreEqual(1, EventBus.Instance.GetHandlerCount<TestEvent>(), "Should have one TestEvent handler");
+        }
+
+        /// <summary>
+        /// Helper class to wait for conditions with timeout
+        /// </summary>
+        private static class Await
+        {
+            public static void AtMost(int timeoutMs, Action assertions)
+            {
+                var startTime = DateTime.UtcNow;
+                Exception lastException = null;
+
+                while ((DateTime.UtcNow - startTime).TotalMilliseconds < timeoutMs)
+                {
+                    try
+                    {
+                        assertions();
+                        return; // Success
+                    }
+                    catch (Exception ex)
+                    {
+                        lastException = ex;
+                        Thread.Sleep(10); // Small delay before retry
+                    }
+                }
+
+                // Timeout reached, throw the last exception
+                throw new AssertionException($"Timeout after {timeoutMs}ms. Last error: {lastException?.Message}", lastException);
+            }
         }
     }
 }
