@@ -40,5 +40,24 @@ namespace com.DvosTools.bus.Dispatchers
                 }
             }
         }
+
+        public async Task DispatchAndWaitAsync(Action? action, string? eventTypeName = null, Guid? aggregateId = null)
+        {
+            if (action != null)
+            {
+                try
+                {
+                    await Task.Run(action);
+                }
+                catch (Exception ex)
+                {
+                    var errorMessage = aggregateId.HasValue 
+                        ? $"Routed handler error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
+                        : $"Handler error for {eventTypeName}: {ex.Message}";
+                    EventBusLogger.LogError(errorMessage);
+                }
+            }
+        }
+
     }
 }

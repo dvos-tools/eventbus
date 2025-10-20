@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using com.DvosTools.bus.Dispatchers;
 using NUnit.Framework;
@@ -44,10 +43,13 @@ namespace com.DvosTools.bus
             // Act - Use deprecated instance API
             EventBus.Instance.Send(testEvent);
 
-            // Assert
-            Assert.IsTrue(handlerCalled, "Handler should have been called via instance API");
-            Assert.IsNotNull(receivedEvent, "Received event should not be null");
-            Assert.AreEqual("Backwards Compatible Test", receivedEvent.Message);
+            // Wait for async processing to complete
+            Await.AtMost(1000, () =>
+            {
+                Assert.IsTrue(handlerCalled, "Handler should have been called via instance API");
+                Assert.IsNotNull(receivedEvent, "Received event should not be null");
+                Assert.AreEqual("Backwards Compatible Test", receivedEvent.Message);
+            });
         }
 
         [Test]
@@ -302,12 +304,45 @@ namespace com.DvosTools.bus
             EventBus.Instance.Send(routableEvent);
             EventBus.Instance.AggregateReady(aggregateId);
 
-            // Assert
-            Assert.IsTrue(handlerCalled, "TestEvent handler should have been called");
-            Assert.IsTrue(routableHandlerCalled, "RoutableTestEvent handler should have been called");
+            // Assert - Wait for async processing to complete
+            Await.AtMost(1000, () =>
+            {
+                Assert.IsTrue(handlerCalled, "TestEvent handler should have been called");
+                Assert.IsTrue(routableHandlerCalled, "RoutableTestEvent handler should have been called");
+            });
             Assert.AreEqual(0, EventBus.Instance.GetBufferedEventCount(aggregateId), "No events should be buffered");
             Assert.IsTrue(EventBus.Instance.HasHandlers<TestEvent>(), "Should have TestEvent handlers");
             Assert.AreEqual(1, EventBus.Instance.GetHandlerCount<TestEvent>(), "Should have one TestEvent handler");
+        }
+
+        /// <summary>
+        /// Helper class to wait for conditions with timeout
+        /// </summary>
+        private static class Await
+        {
+            public static void AtMost(int timeoutMs, Action assertions)
+            {
+                var startTime = DateTime.UtcNow;
+                Exception lastException = null;
+
+                while ((DateTime.UtcNow - startTime).TotalMilliseconds < timeoutMs)
+                {
+                    try
+                    {
+                        assertions();
+                        return; // Success!
+                    }
+                    catch (Exception ex)
+                    {
+                        lastException = ex;
+                        // Use a small delay that doesn't block Unity's main thread
+                        System.Threading.Tasks.Task.Delay(1).Wait();
+                    }
+                }
+
+                // Timeout reached, throw the last exception
+                throw new AssertionException($"Condition not met within {timeoutMs}ms. Last error: {lastException?.Message}", lastException);
+            }
         }
     }
 }

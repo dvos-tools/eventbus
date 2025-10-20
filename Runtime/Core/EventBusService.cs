@@ -2,14 +2,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using com.DvosTools.bus.Dispatchers;
 
 namespace com.DvosTools.bus.Core
 {
-    /// <summary>
-    /// Service layer for EventBus business logic.
-    /// Handles complex operations, event processing, and business rules.
-    /// </summary>
     internal class EventBusService
     {
         private readonly EventBusCore _core;
@@ -19,13 +16,17 @@ namespace com.DvosTools.bus.Core
             _core = core ?? throw new ArgumentNullException(nameof(core));
         }
 
-        /// <summary>
-        /// Sends an event, handling routing and buffering logic.
-        /// </summary>
         public void Send<T>(T eventData) where T : class
         {
             var queuedEvent = new QueuedEvent(eventData, typeof(T), DateTime.UtcNow);
             var routedEvent = RoutedQueuedEvent.FromQueuedEvent(queuedEvent);
+            
+            // Check if any handlers use UnityDispatcher - if so, process immediately for FIFO order
+            if (HasUnityDispatcherHandlers(typeof(T), routedEvent.AggregateId))
+            {
+                ProcessEventImmediately(queuedEvent);
+                return;
+            }
             
             // Handle non-routed events (no aggregate ID)
             if (routedEvent.AggregateId == Guid.Empty)
@@ -45,29 +46,32 @@ namespace com.DvosTools.bus.Core
             BufferEvent(queuedEvent, routedEvent.AggregateId, typeof(T).Name);
         }
 
-        /// <summary>
-        /// Sends an event and waits for all handlers to complete.
-        /// </summary>
         public void SendAndWait<T>(T eventData) where T : class
         {
             var eventType = typeof(T);
             var routedEvent = RoutedQueuedEvent.FromQueuedEvent(new QueuedEvent(eventData, eventType));
 
-            lock (_core.BufferedEventsLock)
+            List<Subscription> handlerInfos;
+            lock (_core.HandlersLock)
             {
-                if (_core.Handlers.TryGetValue(eventType, out var handlerInfos))
+                if (_core.Handlers.TryGetValue(eventType, out handlerInfos))
                 {
-                    foreach (var handlerInfo in handlerInfos)
-                        ProcessHandlerAndWait(handlerInfo, eventData, eventType.Name, routedEvent.AggregateId);
+                    handlerInfos = new List<Subscription>(handlerInfos); // Copy to avoid holding lock during async operations
                 }
                 else 
+                {
                     EventBusLogger.LogWarning($"No handlers for {eventType.Name}");
+                    return;
+                }
+            }
+
+            // Process handlers sequentially to maintain FIFO order
+            foreach (var handlerInfo in handlerInfos)
+            {
+                ProcessHandlerAndWaitAsync(handlerInfo, eventData, eventType.Name, routedEvent.AggregateId).Wait();
             }
         }
 
-        /// <summary>
-        /// Processes buffered events when an aggregate becomes ready.
-        /// </summary>
         public void AggregateReady(Guid aggregateId)
         {
             if (aggregateId == Guid.Empty)
@@ -83,31 +87,51 @@ namespace com.DvosTools.bus.Core
                 return;
             }
 
-            ProcessBufferedEvents(eventsToProcess, aggregateId);
+            // Process buffered events immediately and in order
+            // This ensures they are processed as a batch in the exact order they were buffered
+            foreach (var eventToProcess in eventsToProcess)
+            {
+                ProcessEventImmediately(eventToProcess);
+            }
+            
+            EventBusLogger.Log($"Processed {eventsToProcess.Count} buffered events immediately (aggregate ID: {aggregateId})");
         }
 
-        /// <summary>
-        /// Processes a single event by finding and executing appropriate handlers.
-        /// </summary>
-        public void ProcessEvent(QueuedEvent queuedEvent)
+        public async Task ProcessEventAsync(QueuedEvent queuedEvent)
         {
             var routedEvent = RoutedQueuedEvent.FromQueuedEvent(queuedEvent);
 
-            lock (_core.BufferedEventsLock)
+            List<Subscription> handlerInfos;
+            lock (_core.HandlersLock)
             {
-                if (_core.Handlers.TryGetValue(queuedEvent.EventType, out var handlerInfos))
+                if (_core.Handlers.TryGetValue(queuedEvent.EventType, out handlerInfos))
                 {
-                    foreach (var handlerInfo in handlerInfos)
-                        ProcessHandler(handlerInfo, queuedEvent.EventData, queuedEvent.EventType.Name, routedEvent.AggregateId);
+                    handlerInfos = new List<Subscription>(handlerInfos); // Copy to avoid holding lock during async operations
                 }
                 else 
+                {
                     EventBusLogger.LogWarning($"No handlers for {queuedEvent.EventType.Name}");
+                    return;
+                }
+            }
+
+            // Process handlers sequentially to maintain FIFO order
+            foreach (var handlerInfo in handlerInfos)
+            {
+                if (handlerInfo.Dispatcher is UnityDispatcher)
+                {
+                    // For Unity dispatcher, use synchronous processing to guarantee FIFO order
+                    ProcessHandlerImmediately(handlerInfo, queuedEvent.EventData, queuedEvent.EventType.Name, routedEvent.AggregateId);
+                }
+                else
+                {
+                    // For other dispatchers, use async processing
+                    await ProcessHandlerAndWaitAsync(handlerInfo, queuedEvent.EventData, queuedEvent.EventType.Name, routedEvent.AggregateId);
+                }
             }
         }
 
-        /// <summary>
-        /// Registers a handler for a specific event type.
-        /// </summary>
+
         public static void RegisterHandler<T>(Action<T> handler, Guid aggregateId = default, IDispatcher? dispatcher = null) where T : class
         {
             var core = EventBusCore.Instance;
@@ -117,10 +141,13 @@ namespace com.DvosTools.bus.Core
             var customDispatcher = dispatcher ?? new ThreadPoolDispatcher();
             var subscription = new Subscription(wrapper, customDispatcher, aggregateId);
 
-            if (!core.Handlers.ContainsKey(eventType))
-                core.Handlers[eventType] = new List<Subscription>();
+            lock (core.HandlersLock)
+            {
+                if (!core.Handlers.ContainsKey(eventType))
+                    core.Handlers[eventType] = new List<Subscription>();
 
-            core.Handlers[eventType].Add(subscription);
+                core.Handlers[eventType].Add(subscription);
+            }
 
             EventBusLogger.Log(aggregateId != Guid.Empty
                 ? $"Registered routed handler for {eventType.Name} (ID: {aggregateId})"
@@ -130,7 +157,7 @@ namespace com.DvosTools.bus.Core
 
         private bool HasHandlerForAggregate(Type eventType, Guid aggregateId)
         {
-            lock (_core.BufferedEventsLock)
+            lock (_core.HandlersLock)
             {
                 if (!_core.Handlers.TryGetValue(eventType, out var handlerInfos))
                     return false;
@@ -138,6 +165,20 @@ namespace com.DvosTools.bus.Core
                 return handlerInfos.Any(handler => handler.AggregateId == aggregateId);
             }
         }
+
+        private bool HasUnityDispatcherHandlers(Type eventType, Guid aggregateId)
+        {
+            lock (_core.HandlersLock)
+            {
+                if (!_core.Handlers.TryGetValue(eventType, out var handlerInfos))
+                    return false;
+
+                return handlerInfos.Any(handler => 
+                    handler.Dispatcher is UnityDispatcher && 
+                    (aggregateId == Guid.Empty || handler.AggregateId == aggregateId));
+            }
+        }
+
 
         private void QueueEvent(QueuedEvent queuedEvent, string eventTypeName)
         {
@@ -160,23 +201,66 @@ namespace com.DvosTools.bus.Core
             EventBusLogger.Log($"Buffered {eventTypeName} for aggregate ID {aggregateId} (no handler available)");
         }
 
-        private void ProcessHandler(Subscription subscription, object eventData, string eventTypeName, Guid eventAggregateId)
+        private async Task ProcessHandlerAndWaitAsync(Subscription subscription, object eventData, string eventTypeName, Guid eventAggregateId)
         {
             // Check if this handler has an aggregate ID requirement
             if (subscription.AggregateId != Guid.Empty)
             {
                 // only process if aggregate IDs match
                 if (eventAggregateId != Guid.Empty && subscription.AggregateId == eventAggregateId)
-                    subscription.Dispatcher.Dispatch(() => subscription.Handler(eventData), eventTypeName, eventAggregateId);
+                {
+                    if (subscription.Dispatcher is UnityDispatcher)
+                    {
+                        // For Unity dispatcher, use synchronous method to ensure FIFO order
+                        subscription.Dispatcher.DispatchAndWait(() => subscription.Handler(eventData), eventTypeName, eventAggregateId);
+                    }
+                    else
+                    {
+                        await subscription.Dispatcher.DispatchAndWaitAsync(() => subscription.Handler(eventData), eventTypeName, eventAggregateId);
+                    }
+                }
                 
                 return;
             }
 
             // This is a regular handler - process all events
-            subscription.Dispatcher.Dispatch(() => subscription.Handler(eventData), eventTypeName);
+            if (subscription.Dispatcher is UnityDispatcher)
+            {
+                // For Unity dispatcher, use synchronous method to ensure FIFO order
+                subscription.Dispatcher.DispatchAndWait(() => subscription.Handler(eventData), eventTypeName);
+            }
+            else
+            {
+                await subscription.Dispatcher.DispatchAndWaitAsync(() => subscription.Handler(eventData), eventTypeName);
+            }
         }
 
-        private void ProcessHandlerAndWait(Subscription subscription, object eventData, string eventTypeName, Guid eventAggregateId)
+        private void ProcessEventImmediately(QueuedEvent queuedEvent)
+        {
+            var routedEvent = RoutedQueuedEvent.FromQueuedEvent(queuedEvent);
+
+            List<Subscription> handlerInfos;
+            lock (_core.HandlersLock)
+            {
+                if (_core.Handlers.TryGetValue(queuedEvent.EventType, out handlerInfos))
+                {
+                    handlerInfos = new List<Subscription>(handlerInfos); // Copy to avoid holding lock during processing
+                }
+                else 
+                {
+                    EventBusLogger.LogWarning($"No handlers for {queuedEvent.EventType.Name}");
+                    return;
+                }
+            }
+
+            // Process handlers immediately and sequentially to maintain FIFO order
+            foreach (var handlerInfo in handlerInfos)
+            {
+                ProcessHandlerImmediately(handlerInfo, queuedEvent.EventData, queuedEvent.EventType.Name, routedEvent.AggregateId);
+            }
+        }
+
+        private void ProcessHandlerImmediately(Subscription subscription, object eventData, string eventTypeName, Guid eventAggregateId)
         {
             // Check if this handler has an aggregate ID requirement
             if (subscription.AggregateId != Guid.Empty)
@@ -211,20 +295,6 @@ namespace com.DvosTools.bus.Core
             }
         }
 
-        private void ProcessBufferedEvents(List<QueuedEvent> eventsToProcess, Guid aggregateId)
-        {
-            // Queue the events for processing by the background queue processor
-            // This ensures they go through the same processing flow as normal events
-            lock (_core.QueueLock)
-            {
-                foreach (var eventToProcess in eventsToProcess)
-                {
-                    _core.EventQueue.Enqueue(eventToProcess);
-                }
-            }
-            
-            EventBusLogger.Log($"Queued {eventsToProcess.Count} buffered events for processing (aggregate ID: {aggregateId})");
-        }
         
     }
 }

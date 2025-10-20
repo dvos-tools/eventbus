@@ -17,10 +17,9 @@ namespace com.DvosTools.bus.Core
         public readonly Dictionary<Guid, Queue<QueuedEvent>> BufferedEvents = new();
         public readonly object QueueLock = new();
         public readonly object BufferedEventsLock = new();
+        public readonly object HandlersLock = new();
         private CancellationTokenSource _cancellationTokenSource;
         
-        // Maximum number of events to process in one batch before yielding
-        private const int MaxBatchSize = 100;
         
 
         public static EventBusCore Instance => _instance ??= new EventBusCore();
@@ -38,21 +37,18 @@ namespace com.DvosTools.bus.Core
             {
                 try
                 {
-                    var eventsToProcess = new List<QueuedEvent>();
+                    QueuedEvent? eventToProcess = null;
                     
-                    // Collect up to MaxBatchSize events
+                    // Get one event at a time
                     lock (QueueLock)
                     {
-                        var count = Math.Min(EventQueue.Count, MaxBatchSize);
-                        for (int i = 0; i < count; i++)
-                            if (EventQueue.Count > 0)
-                                eventsToProcess.Add(EventQueue.Dequeue());
+                        if (EventQueue.Count > 0)
+                            eventToProcess = EventQueue.Dequeue();
                     }
 
-                    if (eventsToProcess.Count > 0)
+                    if (eventToProcess != null)
                     {
-                        foreach (var eventToProcess in eventsToProcess)
-                            Service.ProcessEvent(eventToProcess);
+                        await Service.ProcessEventAsync(eventToProcess);
                     }
                     else
                     {
@@ -112,7 +108,10 @@ namespace com.DvosTools.bus.Core
         public void ClearAll()
         {
             // Clear handlers
-            Handlers.Clear();
+            lock (HandlersLock)
+            {
+                Handlers.Clear();
+            }
             
             // Clear buffered events
             lock (BufferedEventsLock)

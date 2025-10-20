@@ -62,14 +62,25 @@ namespace com.DvosTools.bus
             var testEvent = new TestEvent { Message = "Unity Test" };
             EventBus.Send(testEvent);
 
-            // Wait for async processing with timeout
-            yield return new WaitForSeconds(0.1f);
+            // Wait for async processing with multiple yield points
+            var maxWaitTime = 1.0f; // 1 second max
+            var waitInterval = 0.05f; // Check every 50ms
+            var elapsedTime = 0f;
             
-            // Assert with timeout handling
-            Await.AtMost(TimeoutMs, () =>
+            while (elapsedTime < maxWaitTime)
             {
-                Assert.IsTrue(handlerExecutedOnMainThread, "Handler should execute on main thread when using UnityDispatcher");
-            });
+                yield return new WaitForSeconds(waitInterval);
+                elapsedTime += waitInterval;
+                
+                // Check if handler executed
+                if (handlerExecutedOnMainThread)
+                {
+                    break;
+                }
+            }
+            
+            // Assert
+            Assert.IsTrue(handlerExecutedOnMainThread, "Handler should execute on main thread when using UnityDispatcher");
         }
 
         [Test]
@@ -103,19 +114,16 @@ namespace com.DvosTools.bus
             var testEvent = new TestEvent { Message = "Multiple Unity Test" };
             EventBus.Send(testEvent);
 
-            // Wait for async processing with timeout
+            // Wait for async processing
             yield return new WaitForSeconds(0.1f);
 
-            // Assert with timeout handling
-            Await.AtMost(TimeoutMs, () =>
-            {
-                Assert.IsTrue(EventBus.HasHandlers<TestEvent>());
-                Assert.AreEqual(2, EventBus.GetHandlerCount<TestEvent>());
-            });
+            // Assert - Handler registration is immediate, no need for timeout
+            Assert.IsTrue(EventBus.HasHandlers<TestEvent>());
+            Assert.AreEqual(2, EventBus.GetHandlerCount<TestEvent>());
         }
 
         [UnityTest]
-        public IEnumerator Send_100EventsWithUnityDispatcher_AllProcessedInOrder()
+        public IEnumerator Send_400EventsWithUnityDispatcher_AllProcessedInOrder()
         {
             // Arrange
             var unityDispatcher = UnityDispatcher.Instance;
@@ -129,12 +137,15 @@ namespace com.DvosTools.bus
             {
                 if (int.TryParse(evt.Data, out var eventNumber))
                 {
-                    processedEvents.Add(eventNumber);
+                    lock (processedEvents) // Thread-safe access to the list
+                    {
+                        processedEvents.Add(eventNumber);
+                    }
                 }
             }, aggregateId, unityDispatcher);
 
-            // Act - Send 100 events
-            for (int i = 1; i <= 100; i++)
+            // Act - Send 400 events with small delays to avoid overwhelming the system
+            for (int i = 1; i <= 400; i++)
             {
                 expectedOrder.Add(i);
                 EventBus.Send(new RoutableTestEvent 
@@ -142,24 +153,50 @@ namespace com.DvosTools.bus
                     AggregateId = aggregateId, 
                     Data = i.ToString() 
                 });
+                
+                // Small delay to prevent overwhelming the system
+                if (i % 10 == 0)
+                {
+                    yield return null; // Yield every 10 events
+                }
             }
 
-            // Wait for async processing
-            yield return new WaitForSeconds(0.5f);
+            // Wait for async processing with multiple yield points
+            var maxWaitTime = 10.0f; // 5 seconds max
+            var waitInterval = 0.1f; // Check every 100ms
+            var elapsedTime = 0f;
+            
+            while (elapsedTime < maxWaitTime)
+            {
+                yield return new WaitForSeconds(waitInterval);
+                elapsedTime += waitInterval;
+                
+                // Check if all events are processed (thread-safe)
+                int count;
+                lock (processedEvents)
+                {
+                    count = processedEvents.Count;
+                }
+                
+                if (count >= 400)
+                {
+                    break;
+                }
+            }
 
             // Assert - All events should be processed in FIFO order
-            Await.AtMost(TimeoutMs, () =>
+            lock (processedEvents)
             {
-                Assert.AreEqual(100, processedEvents.Count, "Should have processed all 100 events");
+                Assert.AreEqual(400, processedEvents.Count, "Should have processed all 100 events");
                 
                 // Verify FIFO order
-                for (int i = 0; i < 100; i++)
+                for (int i = 0; i < 400; i++)
                 {
                     Assert.AreEqual(i + 1, processedEvents[i], $"Event {i + 1} should be processed in position {i}");
                 }
-                
-                Assert.AreEqual(0, EventBus.GetBufferedEventCount(aggregateId), "No events should be buffered");
-            });
+            }
+            
+            Assert.AreEqual(0, EventBus.GetBufferedEventCount(aggregateId), "No events should be buffered");
         }
 
         /// <summary>
@@ -182,7 +219,8 @@ namespace com.DvosTools.bus
                     catch (Exception ex)
                     {
                         lastException = ex;
-                        Thread.Sleep(10); // Small delay before retry
+                        // Use a small delay that doesn't block Unity's main thread
+                        System.Threading.Tasks.Task.Delay(1).Wait();
                     }
                 }
 
