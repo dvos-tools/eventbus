@@ -1,15 +1,35 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace com.DvosTools.bus.Dispatchers
 {
+    internal class QueuedAction
+    {
+        public Action Action { get; }
+        public TaskCompletionSource<bool> CompletionSource { get; }
+        public string? EventTypeName { get; }
+        public Guid? AggregateId { get; }
+
+        public QueuedAction(Action action, string? eventTypeName = null, Guid? aggregateId = null)
+        {
+            Action = action ?? throw new ArgumentNullException(nameof(action));
+            CompletionSource = new TaskCompletionSource<bool>();
+            EventTypeName = eventTypeName;
+            AggregateId = aggregateId;
+        }
+    }
+
     public class UnityDispatcher : MonoBehaviour, IDispatcher
     {
         private static UnityDispatcher? _instance;
         private static readonly object Lock = new();
         private static SynchronizationContext? _mainThreadContext;
+        private static readonly Queue<QueuedAction> _actionQueue = new();
+        private static readonly object _queueLock = new();
 
         public static UnityDispatcher? Instance
         {
@@ -37,57 +57,147 @@ namespace com.DvosTools.bus.Dispatchers
             _mainThreadContext = SynchronizationContext.Current;
         }
 
-        public void Dispatch(Action? action, string? eventTypeName = null, Guid? aggregateId = null)
+        public bool IsQueueEmpty()
         {
-            if (action != null)
+            lock (_queueLock)
+            {
+                return _actionQueue.Count == 0;
+            }
+        }
+
+        public async Task DispatchAndWaitAsync(Action? action, string? eventTypeName = null, Guid? aggregateId = null)
+        {
+            if (action == null) return;
+            try
+            {
+                if (SynchronizationContext.Current == _mainThreadContext)
+                {
+                    // Already on the main thread, execute immediately
+                    action.Invoke();
+                }
+                else
+                {
+                    // On background thread, queue the action and wait for completion
+                    // This maintains FIFO order by ensuring each action completes before the next
+                    var queuedAction = new QueuedAction(action, eventTypeName, aggregateId);
+                    
+                    lock (_queueLock)
+                    {
+                        _actionQueue.Enqueue(queuedAction);
+                    }
+                    
+                    // Wait for the action to complete on the main thread
+                    // This ensures FIFO order - each event waits for the previous one to complete
+                    await queuedAction.CompletionSource.Task;
+                }
+            }
+            catch (Exception ex)
+            {
+                var errorMessage = aggregateId.HasValue 
+                    ? $"DispatchAndWaitAsync error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
+                    : $"DispatchAndWaitAsync error for {eventTypeName}: {ex.Message}";
+                EventBusLogger.LogError(errorMessage);
+            }
+        }
+
+
+        private void Update()
+        {
+            // Process one action per frame to maintain FIFO order and prevent blocking
+            QueuedAction? queuedAction = null;
+            lock (_queueLock)
+            {
+                if (_actionQueue.Count > 0)
+                    queuedAction = _actionQueue.Dequeue();
+            }
+            
+            if (queuedAction != null)
             {
                 try
                 {
-                    if (_mainThreadContext != null)
-                    {
-                        // Use SynchronizationContext to post to the main thread
-                        _mainThreadContext.Post(_ => action.Invoke(), null);
-                    }
-                    else
-                    {
-                        _mainThreadContext = SynchronizationContext.Current;
-                    }
+                    queuedAction.Action.Invoke();
+                    queuedAction.CompletionSource.SetResult(true);
                 }
                 catch (Exception ex)
                 {
-                    var errorMessage = aggregateId.HasValue 
-                        ? $"Routed handler error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
-                        : $"Handler error for {eventTypeName}: {ex.Message}";
+                    var errorMessage = queuedAction.AggregateId.HasValue 
+                        ? $"Main thread action error for {queuedAction.EventTypeName} (ID: {queuedAction.AggregateId}): {ex.Message}"
+                        : $"Main thread action error for {queuedAction.EventTypeName}: {ex.Message}";
                     EventBusLogger.LogError(errorMessage);
+                    queuedAction.CompletionSource.SetException(ex);
                 }
+            }
+        }
+
+        public void Dispatch(Action? action, string? eventTypeName = null, Guid? aggregateId = null)
+        {
+            if (action == null) return;
+            try
+            {
+                if (_mainThreadContext != null)
+                {
+                    // Use SynchronizationContext.Post to avoid blocking - fire and forget
+                    _mainThreadContext.Post(_ => 
+                    {
+                        try
+                        {
+                            action.Invoke();
+                        }
+                        catch (Exception ex)
+                        {
+                            var errorMessage = aggregateId.HasValue 
+                                ? $"Handler error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
+                                : $"Handler error for {eventTypeName}: {ex.Message}";
+                            EventBusLogger.LogError(errorMessage);
+                        }
+                    }, null);
+                }
+                else
+                {
+                    _mainThreadContext = SynchronizationContext.Current;
+                }
+            }
+            catch (Exception ex)
+            {
+                var errorMessage = aggregateId.HasValue 
+                    ? $"Dispatch error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
+                    : $"Dispatch error for {eventTypeName}: {ex.Message}";
+                EventBusLogger.LogError(errorMessage);
             }
         }
 
         public void DispatchAndWait(Action? action, string? eventTypeName = null, Guid? aggregateId = null)
         {
-            if (action != null)
+            if (action == null) return;
+            try
             {
-                try
+                if (SynchronizationContext.Current == _mainThreadContext)
                 {
-                    if (_mainThreadContext != null)
-                    {
-                        // Use SynchronizationContext to send (synchronous) to the main thread
-                        _mainThreadContext.Send(_ => action.Invoke(), null);
-                    }
-                    else
-                    {
-                        _mainThreadContext = SynchronizationContext.Current;
-                        // Fallback to immediate execution if no context
-                        action.Invoke();
-                    }
+                    // Already on the main thread, execute immediately
+                    action.Invoke();
                 }
-                catch (Exception ex)
+                else
                 {
-                    var errorMessage = aggregateId.HasValue 
-                        ? $"Routed handler error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
-                        : $"Handler error for {eventTypeName}: {ex.Message}";
-                    EventBusLogger.LogError(errorMessage);
+                    // On background thread, queue the action and wait for completion
+                    // This maintains FIFO order by ensuring each action completes before the next
+                    var queuedAction = new QueuedAction(action, eventTypeName, aggregateId);
+                    
+                    lock (_queueLock)
+                    {
+                        _actionQueue.Enqueue(queuedAction);
+                    }
+                    
+                    // Wait for the action to complete on the main thread
+                    // This ensures FIFO order - each event waits for the previous one to complete
+                    queuedAction.CompletionSource.Task.Wait();
                 }
+            }
+            catch (Exception ex)
+            {
+                var errorMessage = aggregateId.HasValue 
+                    ? $"DispatchAndWait error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
+                    : $"DispatchAndWait error for {eventTypeName}: {ex.Message}";
+                EventBusLogger.LogError(errorMessage);
             }
         }
 

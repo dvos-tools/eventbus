@@ -99,9 +99,12 @@ namespace com.DvosTools.bus
         public static void UnregisterHandlers<T>() where T : class
         {
             var eventType = typeof(T);
-            if (CoreEventBus.Handlers.TryGetValue(eventType, out var handler))
+            lock (CoreEventBus.HandlersLock)
             {
-                handler.Clear();
+                if (CoreEventBus.Handlers.TryGetValue(eventType, out var handler))
+                {
+                    handler.Clear();
+                }
             }
         }
 
@@ -110,7 +113,10 @@ namespace com.DvosTools.bus
         /// </summary>
         public static void UnregisterAllHandlers()
         {
-            CoreEventBus.Handlers.Clear();
+            lock (CoreEventBus.HandlersLock)
+            {
+                CoreEventBus.Handlers.Clear();
+            }
         }
 
         /// <summary>
@@ -186,7 +192,10 @@ namespace com.DvosTools.bus
         public static int GetHandlerCount<T>() where T : class
         {
             var eventType = typeof(T);
-            return CoreEventBus.Handlers.TryGetValue(eventType, out var handlers) ? handlers.Count : 0;
+            lock (CoreEventBus.HandlersLock)
+            {
+                return CoreEventBus.Handlers.TryGetValue(eventType, out var handlers) ? handlers.Count : 0;
+            }
         }
 
         /// <summary>
