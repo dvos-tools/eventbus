@@ -21,13 +21,6 @@ namespace com.DvosTools.bus.Core
             var queuedEvent = new QueuedEvent(eventData, typeof(T), DateTime.UtcNow);
             var routedEvent = RoutedQueuedEvent.FromQueuedEvent(queuedEvent);
             
-            // Check if any handlers use UnityDispatcher - if so, process immediately for FIFO order
-            if (HasUnityDispatcherHandlers(typeof(T), routedEvent.AggregateId))
-            {
-                ProcessEventImmediately(queuedEvent);
-                return;
-            }
-            
             // Handle non-routed events (no aggregate ID)
             if (routedEvent.AggregateId == Guid.Empty)
             {
@@ -166,18 +159,6 @@ namespace com.DvosTools.bus.Core
             }
         }
 
-        private bool HasUnityDispatcherHandlers(Type eventType, Guid aggregateId)
-        {
-            lock (_core.HandlersLock)
-            {
-                if (!_core.Handlers.TryGetValue(eventType, out var handlerInfos))
-                    return false;
-
-                return handlerInfos.Any(handler => 
-                    handler.Dispatcher is UnityDispatcher && 
-                    (aggregateId == Guid.Empty || handler.AggregateId == aggregateId));
-            }
-        }
 
 
         private void QueueEvent(QueuedEvent queuedEvent, string eventTypeName)
@@ -235,7 +216,7 @@ namespace com.DvosTools.bus.Core
             }
         }
 
-        private void ProcessEventImmediately(QueuedEvent queuedEvent)
+        public void ProcessEventImmediately(QueuedEvent queuedEvent)
         {
             var routedEvent = RoutedQueuedEvent.FromQueuedEvent(queuedEvent);
 
