@@ -201,5 +201,41 @@ namespace com.DvosTools.bus.Dispatchers
             }
         }
 
+        /// <summary>
+        /// Cleans up the UnityDispatcher resources.
+        /// This can be called manually or is automatically called by Unity's OnDestroy.
+        /// </summary>
+        public void Cleanup()
+        {
+            // Complete all pending TaskCompletionSources to prevent hanging
+            lock (_queueLock)
+            {
+                while (_actionQueue.Count > 0)
+                {
+                    var queuedAction = _actionQueue.Dequeue();
+                    try
+                    {
+                        if (!queuedAction.CompletionSource.Task.IsCompleted)
+                        {
+                            queuedAction.CompletionSource.SetCanceled();
+                        }
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // Already disposed, ignore
+                    }
+                }
+            }
+
+            // Clear static references
+            _instance = null;
+            _mainThreadContext = null;
+        }
+
+        private void OnDestroy()
+        {
+            Cleanup();
+        }
+
     }
 }

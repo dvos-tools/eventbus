@@ -140,5 +140,30 @@ namespace com.DvosTools.bus.Core
             _ = Task.Run(ProcessEventQueueAsync, _cancellationTokenSource.Token);
         }
 
+        public void Dispose()
+        {
+            // Cancel the background task
+            Shutdown();
+            
+            // Dispose the cancellation token source
+            _cancellationTokenSource.Dispose();
+            
+            // Clear all collections to free memory
+            lock (HandlersLock)
+            {
+                Handlers.Clear();
+            }
+            
+            lock (BufferedEventsLock)
+            {
+                BufferedEvents.Clear();
+            }
+            
+            lock (QueueLock)
+            {
+                EventQueue.Clear();
+            }
+        }
+
     }
 }
