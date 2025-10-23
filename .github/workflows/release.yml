@@ -1,4 +1,4 @@
-name: Version Bump Only
+name: Version Bump Only (No Tags/Releases)
 
 on:
   push:
@@ -38,3 +38,12 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         npx --ignore-scripts semantic-release
+    
+    - name: Summary
+      run: |
+        echo "✅ Version bump completed!"
+        echo "📝 CHANGELOG.md updated"
+        echo "📦 package.json updated"
+        echo ""
+        echo "🚀 Ready for manual release!"
+        echo "You can now create a tag and release manually when ready."
