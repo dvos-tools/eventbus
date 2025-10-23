@@ -93,30 +93,79 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Unregisters all handlers for a specific event type.
+        /// Disposes all handlers for a specific event type and clears all its queued events.
+        /// Buffered events are not affected as they are aggregate-specific.
         /// </summary>
-        /// <typeparam name="T">The type of event to unregister</typeparam>
-        public static void UnregisterHandlers<T>() where T : class
+        /// <typeparam name="T">The type of event to dispose handlers for</typeparam>
+        public static void DisposeHandlers<T>() where T : class
         {
-            var eventType = typeof(T);
-            lock (CoreEventBus.HandlersLock)
-            {
-                if (CoreEventBus.Handlers.TryGetValue(eventType, out var handler))
-                {
-                    handler.Clear();
-                }
-            }
+            CoreEventBus.DisposeHandlers<T>();
         }
 
         /// <summary>
-        /// Unregisters all handlers for all event types.
+        /// Disposes all handlers for all event types and clears all events.
         /// </summary>
-        public static void UnregisterAllHandlers()
+        public static void DisposeAllHandlers()
         {
-            lock (CoreEventBus.HandlersLock)
-            {
-                CoreEventBus.Handlers.Clear();
-            }
+            CoreEventBus.DisposeAllHandlers();
+        }
+
+        /// <summary>
+        /// Clears all queued and buffered events for a specific aggregate ID.
+        /// </summary>
+        /// <param name="aggregateId">The aggregate ID to clear events for</param>
+        public static void ClearEventsForAggregate(Guid aggregateId)
+        {
+            CoreEventBus.ClearEventsForAggregate(aggregateId);
+        }
+
+        /// <summary>
+        /// Resets an aggregate by removing all its handlers and clearing all its events.
+        /// </summary>
+        /// <param name="aggregateId">The aggregate ID to reset</param>
+        public static void ResetAggregate(Guid aggregateId)
+        {
+            CoreEventBus.ResetAggregate(aggregateId);
+        }
+
+        /// <summary>
+        /// Disposes handlers for a specific event type and aggregate ID, and clears all its events.
+        /// </summary>
+        /// <typeparam name="T">The type of event to dispose handlers for</typeparam>
+        /// <param name="aggregateId">The aggregate ID to dispose handlers for</param>
+        public static void DisposeHandlersForAggregate<T>(Guid aggregateId) where T : class
+        {
+            CoreEventBus.DisposeHandlersForAggregate<T>(aggregateId);
+        }
+
+        /// <summary>
+        /// Disposes a specific handler from an aggregate by reference and clears all its events.
+        /// </summary>
+        /// <param name="handler">The handler function to dispose</param>
+        /// <param name="aggregateId">The aggregate ID to dispose the handler from</param>
+        public static void DisposeHandlerFromAggregate<T>(Action<T> handler, Guid aggregateId) where T : class
+        {
+            EventBusService.DisposeHandlerFromAggregate(handler, aggregateId);
+        }
+
+        /// <summary>
+        /// Gets the number of registered handlers for a specific aggregate ID.
+        /// </summary>
+        /// <param name="aggregateId">The aggregate ID to check</param>
+        /// <returns>Number of registered handlers for the aggregate</returns>
+        public static int GetHandlerCountForAggregate(Guid aggregateId)
+        {
+            return CoreEventBus.GetHandlerCountForAggregate(aggregateId);
+        }
+
+        /// <summary>
+        /// Checks if there are any handlers registered for a specific aggregate ID.
+        /// </summary>
+        /// <param name="aggregateId">The aggregate ID to check</param>
+        /// <returns>True if handlers are registered for the aggregate, false otherwise</returns>
+        public static bool HasHandlersForAggregate(Guid aggregateId)
+        {
+            return CoreEventBus.HasHandlersForAggregate(aggregateId);
         }
 
         /// <summary>
