@@ -7,20 +7,20 @@ using com.DvosTools.bus.Dispatchers;
 namespace com.DvosTools.bus
 {
     /// <summary>
-    /// Central event communication hub for Unity applications.
+    /// Central event communication hub for applications.
     /// 
-    /// The EventBus enables loose coupling between game systems by allowing any component to publish events
+    /// The EventBus enables loose coupling between systems by allowing any component to publish events
     /// that other components can subscribe to. Events can be sent immediately or buffered until specific
-    /// game objects (aggregates) are ready to process them.
+    /// aggregates are ready to process them.
     /// 
     /// Key capabilities:
     /// - Publish events that any number of subscribers can receive
-    /// - Route events to specific game objects using aggregate IDs
-    /// - Buffer events until game objects are ready to handle them
+    /// - Route events to specific aggregates using aggregate IDs
+    /// - Buffer events until aggregates are ready to handle them
     /// - Execute event handlers on different threads (main thread, background, or immediate)
     /// - Maintain event order and ensure thread safety
     /// 
-    /// This is the primary interface for all event communication in your Unity project.
+    /// This is the primary interface for all event communication in your application.
     /// </summary>
     public static class EventBus
     {
@@ -217,19 +217,50 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
+        /// Cleans up all resources and resets the event bus state.
+        /// This should be called when you want to completely reset the event bus state.
+        /// Note: This will recreate singletons on next access.
+        /// </summary>
+        public static void Cleanup()
+        {
+            // Cleanup Unity-specific dispatchers first
+            try
+            {
+                BusHelper.Instance?.Cleanup();
+                UnityDispatcher.Instance?.Cleanup();
+            }
+            catch
+            {
+                // ignored
+            }
+
+
+            // Cleanup the core event bus (this clears all handlers and their dispatchers)
+            CoreEventBus.Dispose();
+        }
+
+        /// <summary>
         /// Subscribes to events with handlers that run on Unity's main thread.
         /// 
         /// Use this when your handler needs to access Unity APIs (GameObjects, Components, etc.)
         /// or when you need to update the UI. All Unity API calls must happen on the main thread.
         /// 
         /// This is the most common choice for game logic handlers that interact with Unity objects.
+        /// Note: This method requires Unity to be available.
         /// </summary>
         /// <typeparam name="T">The type of event to handle</typeparam>
         /// <param name="handler">The function to call when this event is received</param>
-        /// <param name="aggregateId">Game object ID for routed events, or Guid.Empty for global handlers</param>
+        /// <param name="aggregateId">Aggregate ID for routed events, or Guid.Empty for global handlers</param>
         public static void RegisterUnityHandler<T>(Action<T> handler, Guid aggregateId = default) where T : class
         {
-            RegisterHandler(handler, aggregateId, UnityDispatcher.Instance);
+            try
+            {
+                RegisterHandler(handler, aggregateId, UnityDispatcher.Instance);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("UnityDispatcher is not available. Make sure you're running in a Unity environment.", ex);
+            }
         }
 
         /// <summary>

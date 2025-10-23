@@ -45,5 +45,20 @@ namespace com.DvosTools.bus
                 Debug.Log(logMessage);
             }
         }
+
+        /// <summary>
+        /// Cleans up the BusHelper resources.
+        /// This can be called manually or is automatically called by Unity's OnDestroy.
+        /// </summary>
+        public void Cleanup()
+        {
+            // Clear static reference
+            _instance = null;
+        }
+
+        private void OnDestroy()
+        {
+            Cleanup();
+        }
     }
 }

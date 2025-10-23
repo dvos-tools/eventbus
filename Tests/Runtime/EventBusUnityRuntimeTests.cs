@@ -123,7 +123,7 @@ namespace com.DvosTools.bus
         }
 
         [UnityTest]
-        public IEnumerator Send_400EventsWithUnityDispatcher_AllProcessedInOrder()
+        public IEnumerator Send_4000EventsWithUnityDispatcher_AllProcessedInOrder()
         {
             // Arrange
             var unityDispatcher = UnityDispatcher.Instance;
@@ -145,7 +145,7 @@ namespace com.DvosTools.bus
             }, aggregateId, unityDispatcher);
 
             // Act - Send 400 events with small delays to avoid overwhelming the system
-            for (int i = 1; i <= 400; i++)
+            for (int i = 1; i <= 4000; i++)
             {
                 expectedOrder.Add(i);
                 EventBus.Send(new RoutableTestEvent 
@@ -162,7 +162,7 @@ namespace com.DvosTools.bus
             }
 
             // Wait for async processing with multiple yield points
-            var maxWaitTime = 10.0f; // 5 seconds max
+            var maxWaitTime = 60.0f; // 1 min max
             var waitInterval = 0.1f; // Check every 100ms
             var elapsedTime = 0f;
             
@@ -178,7 +178,7 @@ namespace com.DvosTools.bus
                     count = processedEvents.Count;
                 }
                 
-                if (count >= 400)
+                if (count >= 4000)
                 {
                     break;
                 }
@@ -187,10 +187,10 @@ namespace com.DvosTools.bus
             // Assert - All events should be processed in FIFO order
             lock (processedEvents)
             {
-                Assert.AreEqual(400, processedEvents.Count, "Should have processed all 100 events");
+                Assert.AreEqual(4000, processedEvents.Count, "Should have processed all 100 events");
                 
                 // Verify FIFO order
-                for (int i = 0; i < 400; i++)
+                for (int i = 0; i < 4000; i++)
                 {
                     Assert.AreEqual(i + 1, processedEvents[i], $"Event {i + 1} should be processed in position {i}");
                 }
