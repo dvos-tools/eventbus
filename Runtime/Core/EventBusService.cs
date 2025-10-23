@@ -80,7 +80,7 @@ namespace com.DvosTools.bus.Core
                 return;
             }
 
-            // Process buffered events immediately and in order
+            // Process buffered events immediately, and in order
             // This ensures they are processed as a batch in the exact order they were buffered
             foreach (var eventToProcess in eventsToProcess)
             {
@@ -111,16 +111,7 @@ namespace com.DvosTools.bus.Core
             // Process handlers sequentially to maintain FIFO order
             foreach (var handlerInfo in handlerInfos)
             {
-                if (handlerInfo.Dispatcher is UnityDispatcher)
-                {
-                    // For Unity dispatcher, use synchronous processing to guarantee FIFO order
-                    ProcessHandlerImmediately(handlerInfo, queuedEvent.EventData, queuedEvent.EventType.Name, routedEvent.AggregateId);
-                }
-                else
-                {
-                    // For other dispatchers, use async processing
-                    await ProcessHandlerAndWaitAsync(handlerInfo, queuedEvent.EventData, queuedEvent.EventType.Name, routedEvent.AggregateId);
-                }
+                await ProcessHandlerAndWaitAsync(handlerInfo, queuedEvent.EventData, queuedEvent.EventType.Name, routedEvent.AggregateId);
             }
         }
 
@@ -132,7 +123,8 @@ namespace com.DvosTools.bus.Core
             var wrapper = new Action<object>(obj => handler((T)obj));
 
             var customDispatcher = dispatcher ?? new ThreadPoolDispatcher();
-            var subscription = new Subscription(wrapper, customDispatcher, aggregateId);
+            var subscription = new Subscription(wrapper, customDispatcher, aggregateId, handler);
+            EventBusLogger.Log($"Registered handler: {handler?.GetHashCode()} for aggregate {aggregateId}");
 
             lock (core.HandlersLock)
             {
@@ -190,30 +182,13 @@ namespace com.DvosTools.bus.Core
                 // only process if aggregate IDs match
                 if (eventAggregateId != Guid.Empty && subscription.AggregateId == eventAggregateId)
                 {
-                    if (subscription.Dispatcher is UnityDispatcher)
-                    {
-                        // For Unity dispatcher, use synchronous method to ensure FIFO order
-                        subscription.Dispatcher.DispatchAndWait(() => subscription.Handler(eventData), eventTypeName, eventAggregateId);
-                    }
-                    else
-                    {
-                        await subscription.Dispatcher.DispatchAndWaitAsync(() => subscription.Handler(eventData), eventTypeName, eventAggregateId);
-                    }
+                    await subscription.Dispatcher.DispatchAndWaitAsync(() => subscription.Handler(eventData), eventTypeName, eventAggregateId);
                 }
                 
                 return;
             }
 
-            // This is a regular handler - process all events
-            if (subscription.Dispatcher is UnityDispatcher)
-            {
-                // For Unity dispatcher, use synchronous method to ensure FIFO order
-                subscription.Dispatcher.DispatchAndWait(() => subscription.Handler(eventData), eventTypeName);
-            }
-            else
-            {
-                await subscription.Dispatcher.DispatchAndWaitAsync(() => subscription.Handler(eventData), eventTypeName);
-            }
+            await subscription.Dispatcher.DispatchAndWaitAsync(() => subscription.Handler(eventData), eventTypeName);
         }
 
         public void ProcessEventImmediately(QueuedEvent queuedEvent)
@@ -276,6 +251,13 @@ namespace com.DvosTools.bus.Core
             }
         }
 
+        public void DisposeHandlerFromAggregate<T>(Action<T> handler, Guid aggregateId) where T : class
+        {
+            lock (_core.QueueLock)
+            {
+                _core.DisposeHandlerFromAggregate(handler, aggregateId);
+            }
+        }
         
     }
 }

@@ -140,6 +140,159 @@ namespace com.DvosTools.bus.Core
             _ = Task.Run(ProcessEventQueueAsync, _cancellationTokenSource.Token);
         }
 
+        public void DisposeHandlers<T>() where T : class
+        {
+            var eventType = typeof(T);
+            lock (HandlersLock)
+            {
+                if (Handlers.TryGetValue(eventType, out var handler))
+                {
+                    handler.Clear();
+                }
+            }
+            // Clear all queued events for this event type
+            lock (QueueLock)
+            {
+                var eventsToKeep = new Queue<QueuedEvent>();
+                while (EventQueue.Count > 0)
+                {
+                    var queuedEvent = EventQueue.Dequeue();
+                    if (queuedEvent.EventType != eventType)
+                    {
+                        eventsToKeep.Enqueue(queuedEvent);
+                    }
+                }
+                while (eventsToKeep.Count > 0)
+                {
+                    EventQueue.Enqueue(eventsToKeep.Dequeue());
+                }
+            }
+        }
+
+        public void DisposeAllHandlers()
+        {
+            lock (HandlersLock)
+            {
+                Handlers.Clear();
+            }
+            // Clear all queued events
+            lock (QueueLock)
+            {
+                EventQueue.Clear();
+            }
+            // Clear all buffered events
+            lock (BufferedEventsLock)
+            {
+                BufferedEvents.Clear();
+            }
+        }
+
+        public void ClearEventsForAggregate(Guid aggregateId)
+        {
+            
+            // Clear queued events for this aggregate
+            lock (QueueLock)
+            {
+                var eventsToKeep = new Queue<QueuedEvent>();
+                while (EventQueue.Count > 0)
+                {
+                    var queuedEvent = EventQueue.Dequeue();
+                    var routedEvent = RoutedQueuedEvent.FromQueuedEvent(queuedEvent);
+                    if (routedEvent.AggregateId != aggregateId)
+                    {
+                        eventsToKeep.Enqueue(queuedEvent);
+                    }
+                }
+                while (eventsToKeep.Count > 0)
+                {
+                    EventQueue.Enqueue(eventsToKeep.Dequeue());
+                }
+            }
+            
+            // Clear buffered events for this aggregate
+            lock (BufferedEventsLock)
+            {
+                BufferedEvents.Remove(aggregateId);
+            }
+        }
+
+        public void ResetAggregate(Guid aggregateId)
+        {
+            if (aggregateId == Guid.Empty) return;
+            lock (HandlersLock)
+            {
+                foreach (var eventType in Handlers.Keys.ToList())
+                {
+                    var handlers = Handlers[eventType];
+                    handlers.RemoveAll(sub => sub.AggregateId == aggregateId);
+                    if (handlers.Count == 0) Handlers.Remove(eventType);
+                }
+            }
+            ClearEventsForAggregate(aggregateId);
+        }
+
+        public void DisposeHandlersForAggregate<T>(Guid aggregateId) where T : class
+        {
+            if (aggregateId == Guid.Empty) return;
+            var eventType = typeof(T);
+            lock (HandlersLock)
+            {
+                if (Handlers.TryGetValue(eventType, out var handlers))
+                {
+                    handlers.RemoveAll(sub => sub.AggregateId == aggregateId);
+                    if (handlers.Count == 0) Handlers.Remove(eventType);
+                }
+            }
+            ClearEventsForAggregate(aggregateId);
+        }
+
+        public void DisposeHandlerFromAggregate<T>(Action<T> handler, Guid aggregateId) where T : class
+        {
+            if (aggregateId == Guid.Empty) return;
+            
+            bool hasRemainingHandlers = false;
+            lock (HandlersLock)
+            {
+                var eventType = typeof(T);
+                if (Handlers.TryGetValue(eventType, out var handlers))
+                {
+                    handlers.RemoveAll(sub => {
+                        return sub.OriginalHandler == handler && sub.AggregateId == aggregateId;
+                    });
+                    
+                    if (handlers.Count == 0) 
+                    {
+                        Handlers.Remove(eventType);
+                    }
+                    else
+                    {
+                        // Check if there are any remaining handlers for this aggregate across all event types
+                        hasRemainingHandlers = Handlers.Values.Any(handlerList => 
+                            handlerList.Any(sub => sub.AggregateId == aggregateId));
+                    }
+                }
+            }
+            
+            // Only clear events if there are no remaining handlers for this aggregate
+            if (!hasRemainingHandlers)
+            {
+                ClearEventsForAggregate(aggregateId);
+            }
+        }
+
+        public int GetHandlerCountForAggregate(Guid aggregateId)
+        {
+            lock (HandlersLock)
+            {
+                return Handlers.Values.Sum(handlers => handlers.Count(sub => sub.AggregateId == aggregateId));
+            }
+        }
+
+        public bool HasHandlersForAggregate(Guid aggregateId)
+        {
+            return GetHandlerCountForAggregate(aggregateId) > 0;
+        }
+
         public void Dispose()
         {
             // Cancel the background task
