@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/dvos-tools/eventbus/compare/v1.8.0...v1.9.0) (2025-10-23)
+
+
+### Features
+
+* Dispose and clear of handlers and events ([adf0b62](https://github.com/dvos-tools/eventbus/commit/adf0b622eb9fee724ec5f72cd4d9d3170b3ffb4d))
+
 # [1.8.0](https://github.com/dvos-tools/eventbus/compare/v1.7.0...v1.8.0) (2025-10-23)
 
 
