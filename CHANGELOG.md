@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/dvos-tools/eventbus/compare/v1.7.0...v1.8.0) (2025-10-23)
+
+
+### Features
+
+* cleanup logic ([268273a](https://github.com/dvos-tools/eventbus/commit/268273af5057e2252ea5ff729410bbbe1ecbb52d))
+
 # [1.7.0](https://github.com/dvos-tools/eventbus/compare/v1.6.0...v1.7.0) (2025-10-18)
 
 
