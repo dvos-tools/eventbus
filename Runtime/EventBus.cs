@@ -8,19 +8,24 @@ namespace com.DvosTools.bus
 {
     /// <summary>
     /// Central event communication hub for applications.
-    /// 
+    /// <para>
     /// The EventBus enables loose coupling between systems by allowing any component to publish events
     /// that other components can subscribe to. Events can be sent immediately or buffered until specific
     /// aggregates are ready to process them.
-    /// 
+    /// </para>
+    /// <para>
     /// Key capabilities:
-    /// - Publish events that any number of subscribers can receive
-    /// - Route events to specific aggregates using aggregate IDs
-    /// - Buffer events until aggregates are ready to handle them
-    /// - Execute event handlers on different threads (main thread, background, or immediate)
-    /// - Maintain event order and ensure thread safety
-    /// 
+    /// <list type="bullet">
+    /// <item>Publish events that any number of subscribers can receive</item>
+    /// <item>Route events to specific aggregates using aggregate IDs</item>
+    /// <item>Buffer events until aggregates are ready to handle them</item>
+    /// <item>Execute event handlers on different threads (main thread, background, or immediate)</item>
+    /// <item>Maintain event order and ensure thread safety</item>
+    /// </list>
+    /// </para>
+    /// <para>
     /// This is the primary interface for all event communication in your application.
+    /// </para>
     /// </summary>
     public static class EventBus
     {
@@ -49,6 +54,23 @@ namespace com.DvosTools.bus
         /// </summary>
         /// <typeparam name="T">The type of event to send</typeparam>
         /// <param name="eventData">The event data to send</param>
+        /// <example>
+        /// <code lang="csharp">
+        /// // Define a simple event
+        /// public class PlayerDiedEvent
+        /// {
+        ///     public string PlayerName { get; set; }
+        ///     public int Score { get; set; }
+        /// }
+        /// 
+        /// // Send the event
+        /// EventBus.Send(new PlayerDiedEvent 
+        /// { 
+        ///     PlayerName = "Player1", 
+        ///     Score = 1000 
+        /// });
+        /// </code>
+        /// </example>
         public static void Send<T>(T eventData) where T : class
         {
             EventBusService.Send(eventData);
@@ -56,16 +78,30 @@ namespace com.DvosTools.bus
 
         /// <summary>
         /// Publishes an event and waits for all handlers to complete processing.
-        /// 
+        /// <para>
         /// This method blocks the current thread until all registered handlers have finished
         /// executing. This is useful when you need to ensure that all side effects of an event
         /// have been processed before continuing with your code.
-        /// 
+        /// </para>
+        /// <para>
         /// Use this for critical events where you need guaranteed processing order or when
         /// the next operation depends on the event being fully handled.
+        /// </para>
         /// </summary>
         /// <typeparam name="T">The type of event to send</typeparam>
         /// <param name="eventData">The event data to send</param>
+        /// <example>
+        /// <code>
+        /// // Send a critical event and wait for all handlers to complete
+        /// EventBus.SendAndWait(new GameStateChangedEvent 
+        /// { 
+        ///     NewState = GameState.GameOver 
+        /// });
+        /// 
+        /// // Now safe to proceed knowing all handlers have finished
+        /// Debug.Log("All game over handlers have completed");
+        /// </code>
+        /// </example>
         public static void SendAndWait<T>(T eventData) where T : class
         {
             EventBusService.SendAndWait(eventData);
@@ -73,20 +109,40 @@ namespace com.DvosTools.bus
 
         /// <summary>
         /// Subscribes to receive events of a specific type.
-        /// 
+        /// <para>
         /// When an event of the specified type is published, your handler function will be called.
         /// You can register multiple handlers for the same event type - they will all be notified.
-        /// 
+        /// </para>
+        /// <para>
         /// For routed events (implementing IRoutableEvent), specify an aggregateId to only
         /// receive events for that specific game object. Use Guid.Empty for global handlers
         /// that receive all events of this type regardless of routing.
-        /// 
+        /// </para>
+        /// <para>
         /// The dispatcher determines which thread your handler runs on.
+        /// </para>
         /// </summary>
         /// <typeparam name="T">The type of event to handle</typeparam>
         /// <param name="handler">The function to call when this event is received</param>
         /// <param name="aggregateId">Game object ID for routed events, or Guid.Empty for global handlers</param>
         /// <param name="dispatcher">Which thread to run the handler on (defaults to background thread)</param>
+        /// <example>
+        /// <code lang="csharp">
+        /// // Global handler - receives all PlayerDiedEvent events
+        /// EventBus.RegisterHandler&lt;PlayerDiedEvent&gt;(OnPlayerDied);
+        /// 
+        /// // Routed handler - only receives events for specific player
+        /// EventBus.RegisterHandler&lt;PlayerHealthChangedEvent&gt;(OnHealthChanged, playerId);
+        /// 
+        /// // With custom dispatcher
+        /// EventBus.RegisterHandler&lt;DataProcessedEvent&gt;(OnDataProcessed, Guid.Empty, new ThreadPoolDispatcher());
+        /// 
+        /// void OnPlayerDied(PlayerDiedEvent evt)
+        /// {
+        ///     Debug.Log("Player " + evt.PlayerName + " died with score " + evt.Score);
+        /// }
+        /// </code>
+        /// </example>
         public static void RegisterHandler<T>(Action<T> handler, Guid aggregateId = default, IDispatcher? dispatcher = null) where T : class
         {
             EventBusService.RegisterHandler(handler, aggregateId, dispatcher);
@@ -97,6 +153,19 @@ namespace com.DvosTools.bus
         /// Buffered events are not affected as they are aggregate-specific.
         /// </summary>
         /// <typeparam name="T">The type of event to dispose handlers for</typeparam>
+        /// <example>
+        /// <code>
+        /// // Clean up all handlers for a specific event type
+        /// EventBus.DisposeHandlers&lt;PlayerDiedEvent&gt;();
+        /// 
+        /// // This is useful when switching game modes or cleaning up
+        /// public void OnGameModeChanged()
+        /// {
+        ///     EventBus.DisposeHandlers&lt;CombatEvent&gt;();
+        ///     EventBus.DisposeHandlers&lt;ExplorationEvent&gt;();
+        /// }
+        /// </code>
+        /// </example>
         public static void DisposeHandlers<T>() where T : class
         {
             CoreEventBus.DisposeHandlers<T>();
@@ -114,6 +183,18 @@ namespace com.DvosTools.bus
         /// Clears all queued and buffered events for a specific aggregate ID.
         /// </summary>
         /// <param name="aggregateId">The aggregate ID to clear events for</param>
+        /// <example>
+        /// <code>
+        /// // Clear all events for a player when they disconnect
+        /// EventBus.ClearEventsForAggregate(playerId);
+        /// 
+        /// // Clear events when an object becomes inactive
+        /// void OnDisable()
+        /// {
+        ///     EventBus.ClearEventsForAggregate(gameObjectId);
+        /// }
+        /// </code>
+        /// </example>
         public static void ClearEventsForAggregate(Guid aggregateId)
         {
             CoreEventBus.ClearEventsForAggregate(aggregateId);
@@ -179,15 +260,42 @@ namespace com.DvosTools.bus
 
         /// <summary>
         /// Signals that a game object is ready to process its buffered events.
-        /// 
+        /// <para>
         /// When you send routed events to game objects that aren't ready yet, those events
         /// get buffered. Call this method when the game object is initialized and ready to
         /// handle events. All buffered events for this aggregate will be processed immediately.
-        /// 
+        /// </para>
+        /// <para>
         /// This is essential for proper event ordering - events sent before an object is
         /// ready will be processed in the correct order once it becomes ready.
+        /// </para>
         /// </summary>
         /// <param name="aggregateId">The game object ID that is now ready to process events</param>
+        /// <example>
+        /// <code lang="csharp">
+        /// public class PlayerController : MonoBehaviour
+        /// {
+        ///     private Guid playerId;
+        ///     
+        ///     void Start()
+        ///     {
+        ///         playerId = Guid.NewGuid();
+        ///         
+        ///         // Register handler for this player
+        ///         EventBus.RegisterUnityHandler&lt;PlayerHealthChangedEvent&gt;(OnHealthChanged, playerId);
+        ///         
+        ///         // Signal that this player is ready to process buffered events
+        ///         EventBus.AggregateReady(playerId);
+        ///     }
+        ///     
+        ///     void OnHealthChanged(PlayerHealthChangedEvent evt)
+        ///     {
+        ///         // This will receive any events that were buffered before Start() was called
+        ///         UpdateHealthUI(evt.CurrentHealth);
+        ///     }
+        /// }
+        /// </code>
+        /// </example>
         public static void AggregateReady(Guid aggregateId)
         {
             EventBusService.AggregateReady(aggregateId);
@@ -198,6 +306,16 @@ namespace com.DvosTools.bus
         /// </summary>
         /// <param name="aggregateId">The aggregate ID to check</param>
         /// <returns>The number of buffered events</returns>
+        /// <example>
+        /// <code>
+        /// // Check how many events are waiting for a player
+        /// int bufferedCount = EventBus.GetBufferedEventCount(playerId);
+        /// if (bufferedCount > 100)
+        /// {
+        ///     Debug.LogWarning("Player " + playerId + " has " + bufferedCount + " buffered events");
+        /// }
+        /// </code>
+        /// </example>
         public static int GetBufferedEventCount(Guid aggregateId)
         {
             return CoreEventBus.GetBufferedEventCount(aggregateId);
@@ -225,6 +343,16 @@ namespace com.DvosTools.bus
         /// Gets the number of events currently in the processing queue.
         /// </summary>
         /// <returns>Number of events in the queue</returns>
+        /// <example>
+        /// <code>
+        /// // Monitor system health
+        /// int queueSize = EventBus.GetQueueCount();
+        /// if (queueSize > 1000)
+        /// {
+        ///     Debug.LogWarning("High event queue size: " + queueSize);
+        /// }
+        /// </code>
+        /// </example>
         public static int GetQueueCount()
         {
             lock (CoreEventBus.QueueLock)
@@ -238,6 +366,13 @@ namespace com.DvosTools.bus
         /// </summary>
         /// <typeparam name="T">The type of event to check</typeparam>
         /// <returns>Number of registered handlers</returns>
+        /// <example>
+        /// <code>
+        /// // Check how many handlers are listening for player events
+        /// int handlerCount = EventBus.GetHandlerCount&lt;PlayerDiedEvent&gt;();
+        /// Debug.Log("There are " + handlerCount + " handlers for PlayerDiedEvent");
+        /// </code>
+        /// </example>
         public static int GetHandlerCount<T>() where T : class
         {
             var eventType = typeof(T);
@@ -252,6 +387,19 @@ namespace com.DvosTools.bus
         /// </summary>
         /// <typeparam name="T">The type of event to check</typeparam>
         /// <returns>True if handlers are registered, false otherwise</returns>
+        /// <example>
+        /// <code>
+        /// // Check if anyone is listening before sending an event
+        /// if (EventBus.HasHandlers&lt;PlayerDiedEvent&gt;())
+        /// {
+        ///     EventBus.Send(new PlayerDiedEvent { PlayerName = "Player1" });
+        /// }
+        /// else
+        /// {
+        ///     Debug.Log("No handlers for PlayerDiedEvent, skipping send");
+        /// }
+        /// </code>
+        /// </example>
         public static bool HasHandlers<T>() where T : class
         {
             return GetHandlerCount<T>() > 0;
@@ -283,7 +431,6 @@ namespace com.DvosTools.bus
                 // ignored
             }
 
-
             // Cleanup the core event bus (this clears all handlers and their dispatchers)
             CoreEventBus.Dispose();
         }
@@ -300,6 +447,28 @@ namespace com.DvosTools.bus
         /// <typeparam name="T">The type of event to handle</typeparam>
         /// <param name="handler">The function to call when this event is received</param>
         /// <param name="aggregateId">Aggregate ID for routed events, or Guid.Empty for global handlers</param>
+        /// <example>
+        /// <code>
+        /// // Register a handler that updates UI (must run on main thread)
+        /// EventBus.RegisterUnityHandler&lt;PlayerHealthChangedEvent&gt;(OnHealthChanged);
+        /// 
+        /// // Register a routed handler for specific player
+        /// EventBus.RegisterUnityHandler&lt;PlayerMovedEvent&gt;(OnPlayerMoved, playerId);
+        /// 
+        /// void OnHealthChanged(PlayerHealthChangedEvent evt)
+        /// {
+        ///     // Safe to use Unity APIs here
+        ///     healthBar.fillAmount = (float)evt.CurrentHealth / evt.MaxHealth;
+        ///     healthText.text = evt.CurrentHealth + "/" + evt.MaxHealth;
+        /// }
+        /// 
+        /// void OnPlayerMoved(PlayerMovedEvent evt)
+        /// {
+        ///     // Safe to access Unity objects
+        ///     transform.position = evt.Position;
+        /// }
+        /// </code>
+        /// </example>
         public static void RegisterUnityHandler<T>(Action<T> handler, Guid aggregateId = default) where T : class
         {
             try
@@ -352,6 +521,21 @@ namespace com.DvosTools.bus
         /// <param name="handler">The handler function</param>
         /// <param name="aggregateId">The aggregate ID for routing</param>
         /// <param name="dispatcher">Optional dispatcher for handling the event</param>
+        /// <example>
+        /// <code>
+        /// // Register a routed handler for a specific player
+        /// EventBus.RegisterRoutedHandler&lt;PlayerHealthChangedEvent&gt;(OnHealthChanged, playerId);
+        /// 
+        /// // Register with custom dispatcher
+        /// EventBus.RegisterRoutedHandler&lt;DataProcessedEvent&gt;(OnDataProcessed, aggregateId, new ThreadPoolDispatcher());
+        /// 
+        /// void OnHealthChanged(PlayerHealthChangedEvent evt)
+        /// {
+        ///     // This handler only receives events for the specific player
+        ///     UpdatePlayerHealth(evt.CurrentHealth);
+        /// }
+        /// </code>
+        /// </example>
         public static void RegisterRoutedHandler<T>(Action<T> handler, Guid aggregateId, IDispatcher? dispatcher = null) where T : class
         {
             if (aggregateId == Guid.Empty)
@@ -367,6 +551,21 @@ namespace com.DvosTools.bus
         /// <typeparam name="T">The type of event to handle</typeparam>
         /// <param name="handler">The handler function</param>
         /// <param name="dispatcher">Optional dispatcher for handling the event</param>
+        /// <example>
+        /// <code>
+        /// // Register a global handler for all game state changes
+        /// EventBus.RegisterGlobalHandler&lt;GameStateChangedEvent&gt;(OnGameStateChanged);
+        /// 
+        /// // Register with custom dispatcher for background processing
+        /// EventBus.RegisterGlobalHandler&lt;AnalyticsEvent&gt;(OnAnalyticsEvent, new ThreadPoolDispatcher());
+        /// 
+        /// void OnGameStateChanged(GameStateChangedEvent evt)
+        /// {
+        ///     // This handler receives ALL GameStateChangedEvent events
+        ///     Debug.Log("Game state changed to: " + evt.NewState);
+        /// }
+        /// </code>
+        /// </example>
         public static void RegisterGlobalHandler<T>(Action<T> handler, IDispatcher? dispatcher = null) where T : class
         {
             RegisterHandler(handler, Guid.Empty, dispatcher);
@@ -392,6 +591,17 @@ namespace com.DvosTools.bus
         /// Checks if there are any buffered events for any aggregate.
         /// </summary>
         /// <returns>True if there are any buffered events, false otherwise</returns>
+        /// <example>
+        /// <code>
+        /// // Check if any events are waiting to be processed
+        /// if (EventBus.HasBufferedEvents())
+        /// {
+        ///     Debug.Log("There are buffered events waiting to be processed");
+        ///     var totalBuffered = EventBus.GetTotalBufferedEventCount();
+        ///     Debug.Log("Total buffered events: " + totalBuffered);
+        /// }
+        /// </code>
+        /// </example>
         public static bool HasBufferedEvents()
         {
             return GetTotalBufferedEventCount() > 0;
@@ -401,6 +611,16 @@ namespace com.DvosTools.bus
         /// Checks if there are any events currently in the processing queue.
         /// </summary>
         /// <returns>True if there are events in the queue, false otherwise</returns>
+        /// <example>
+        /// <code>
+        /// // Check if events are currently being processed
+        /// if (EventBus.HasQueuedEvents())
+        /// {
+        ///     int queueSize = EventBus.GetQueueCount();
+        ///     Debug.Log("There are " + queueSize + " events in the processing queue");
+        /// }
+        /// </code>
+        /// </example>
         public static bool HasQueuedEvents()
         {
             return GetQueueCount() > 0;
