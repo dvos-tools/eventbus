@@ -1,3 +1,10 @@
+## [1.10.2](https://github.com/dvos-tools/eventbus/compare/v1.10.1...v1.10.2) (2025-10-25)
+
+
+### Bug Fixes
+
+* fixing the fix of the readme fix... ([#28](https://github.com/dvos-tools/eventbus/issues/28)) ([2f2eb91](https://github.com/dvos-tools/eventbus/commit/2f2eb91cd5a197d699cd832367dbc550607b20e4))
+
 ## [1.10.1](https://github.com/dvos-tools/eventbus/compare/v1.10.0...v1.10.1) (2025-10-25)
 
 
