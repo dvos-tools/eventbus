@@ -1,3 +1,10 @@
+# [1.10.0](https://github.com/dvos-tools/eventbus/compare/v1.9.0...v1.10.0) (2025-10-25)
+
+
+### Features
+
+* adding and cleaning up api docs ([#26](https://github.com/dvos-tools/eventbus/issues/26)) ([f071555](https://github.com/dvos-tools/eventbus/commit/f071555f69c16dcc572cd46ea1ca614402d2356e))
+
 # [1.9.0](https://github.com/dvos-tools/eventbus/compare/v1.8.0...v1.9.0) (2025-10-23)
 
 
