@@ -8,24 +8,18 @@ namespace com.DvosTools.bus
 {
     /// <summary>
     /// Central event communication hub for applications.
-    /// <para>
-    /// The EventBus enables loose coupling between systems by allowing any component to publish events
-    /// that other components can subscribe to. Events can be sent immediately or buffered until specific
-    /// aggregates are ready to process them.
-    /// </para>
-    /// <para>
+    /// 
+    /// Enables loose coupling between systems by allowing components to publish and subscribe to events.
+    /// Events can be sent immediately or buffered until aggregates are ready to process them.
+    /// 
     /// Key capabilities:
     /// <list type="bullet">
-    /// <item>Publish events that any number of subscribers can receive</item>
+    /// <item>Publish events to any number of subscribers</item>
     /// <item>Route events to specific aggregates using aggregate IDs</item>
     /// <item>Buffer events until aggregates are ready to handle them</item>
-    /// <item>Execute event handlers on different threads (main thread, background, or immediate)</item>
+    /// <item>Execute handlers on different threads (main, background, or immediate)</item>
     /// <item>Maintain event order and ensure thread safety</item>
     /// </list>
-    /// </para>
-    /// <para>
-    /// This is the primary interface for all event communication in your application.
-    /// </para>
     /// </summary>
     public static class EventBus
     {
@@ -33,24 +27,21 @@ namespace com.DvosTools.bus
         private static readonly EventBusService EventBusService = EventBusCore.Service;
 
         /// <summary>
-        /// Gets the EventBus instance. This is provided for backwards compatibility.
-        /// Prefer using the static methods directly (e.g., EventBus.Send() instead of EventBus.Instance.Send()).
+        /// [DEPRECATED] Gets the EventBus instance for backwards compatibility.
+        /// Use static methods directly instead (e.g., EventBus.Send() not EventBus.Instance.Send()).
         /// </summary>
         [Obsolete("The instance API is deprecated.")]
         public static EventBusInstance Instance => new EventBusInstance();
 
-        // ===== CORE API =====
+        // ===== EVENT PUBLISHING =====
 
         /// <summary>
         /// Publishes an event to all registered subscribers.
         /// 
-        /// This method queues the event for processing and returns immediately. All handlers
-        /// registered for this event type will be notified asynchronously. For routed events
-        /// (implementing IRoutableEvent), only handlers registered for the specific aggregate
-        /// will receive the event.
+        /// Queues the event for processing and returns immediately. For routed events,
+        /// only handlers registered for the specific aggregate will receive the event.
         /// 
-        /// Use this for fire-and-forget event publishing where you don't need to wait for
-        /// handlers to complete.
+        /// Use this for fire-and-forget event publishing.
         /// </summary>
         /// <typeparam name="T">The type of event to send</typeparam>
         /// <param name="eventData">The event data to send</param>
@@ -78,20 +69,14 @@ namespace com.DvosTools.bus
 
         /// <summary>
         /// Publishes an event and waits for all handlers to complete processing.
-        /// <para>
-        /// This method blocks the current thread until all registered handlers have finished
-        /// executing. This is useful when you need to ensure that all side effects of an event
-        /// have been processed before continuing with your code.
-        /// </para>
-        /// <para>
-        /// Use this for critical events where you need guaranteed processing order or when
-        /// the next operation depends on the event being fully handled.
-        /// </para>
+        /// 
+        /// Blocks the current thread until all handlers finish executing. Use this for
+        /// critical events where you need guaranteed processing order.
         /// </summary>
         /// <typeparam name="T">The type of event to send</typeparam>
         /// <param name="eventData">The event data to send</param>
         /// <example>
-        /// <code>
+        /// <code lang="csharp">
         /// // Send a critical event and wait for all handlers to complete
         /// EventBus.SendAndWait(new GameStateChangedEvent 
         /// { 
@@ -109,18 +94,10 @@ namespace com.DvosTools.bus
 
         /// <summary>
         /// Subscribes to receive events of a specific type.
-        /// <para>
-        /// When an event of the specified type is published, your handler function will be called.
-        /// You can register multiple handlers for the same event type - they will all be notified.
-        /// </para>
-        /// <para>
-        /// For routed events (implementing IRoutableEvent), specify an aggregateId to only
-        /// receive events for that specific game object. Use Guid.Empty for global handlers
-        /// that receive all events of this type regardless of routing.
-        /// </para>
-        /// <para>
-        /// The dispatcher determines which thread your handler runs on.
-        /// </para>
+        /// 
+        /// Multiple handlers can be registered for the same event type. For routed events,
+        /// specify an aggregateId to receive events for that specific object. Use Guid.Empty
+        /// for global handlers. The dispatcher determines which thread your handler runs on.
         /// </summary>
         /// <typeparam name="T">The type of event to handle</typeparam>
         /// <param name="handler">The function to call when this event is received</param>
@@ -149,21 +126,14 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Disposes all handlers for a specific event type and clears all its queued events.
-        /// Buffered events are not affected as they are aggregate-specific.
+        /// Disposes all handlers for a specific event type and clears its queued events.
         /// </summary>
         /// <typeparam name="T">The type of event to dispose handlers for</typeparam>
         /// <example>
-        /// <code>
-        /// // Clean up all handlers for a specific event type
-        /// EventBus.DisposeHandlers&lt;PlayerDiedEvent&gt;();
-        /// 
-        /// // This is useful when switching game modes or cleaning up
-        /// public void OnGameModeChanged()
-        /// {
-        ///     EventBus.DisposeHandlers&lt;CombatEvent&gt;();
-        ///     EventBus.DisposeHandlers&lt;ExplorationEvent&gt;();
-        /// }
+        /// <code lang="csharp">
+        /// // Clean up when switching game modes
+        /// EventBus.DisposeHandlers&lt;CombatEvent&gt;();
+        /// EventBus.DisposeHandlers&lt;ExplorationEvent&gt;();
         /// </code>
         /// </example>
         public static void DisposeHandlers<T>() where T : class
@@ -172,7 +142,7 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Disposes all handlers for all event types and clears all events.
+        /// Disposes all handlers and clears all events.
         /// </summary>
         public static void DisposeAllHandlers()
         {
@@ -180,11 +150,11 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Clears all queued and buffered events for a specific aggregate ID.
+        /// Clears all queued and buffered events for a specific aggregate.
         /// </summary>
         /// <param name="aggregateId">The aggregate ID to clear events for</param>
         /// <example>
-        /// <code>
+        /// <code lang="csharp">
         /// // Clear all events for a player when they disconnect
         /// EventBus.ClearEventsForAggregate(playerId);
         /// 
@@ -210,7 +180,7 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Disposes handlers for a specific event type and aggregate ID, and clears all its events.
+        /// Disposes handlers for a specific event type and aggregate, and clears all its events.
         /// </summary>
         /// <typeparam name="T">The type of event to dispose handlers for</typeparam>
         /// <param name="aggregateId">The aggregate ID to dispose handlers for</param>
@@ -220,7 +190,7 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Disposes a specific handler from an aggregate by reference and clears all its events.
+        /// Disposes a specific handler from an aggregate and clears all its events.
         /// </summary>
         /// <param name="handler">The handler function to dispose</param>
         /// <param name="aggregateId">The aggregate ID to dispose the handler from</param>
@@ -230,7 +200,7 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Gets the number of registered handlers for a specific aggregate ID.
+        /// Gets the number of registered handlers for an aggregate.
         /// </summary>
         /// <param name="aggregateId">The aggregate ID to check</param>
         /// <returns>Number of registered handlers for the aggregate</returns>
@@ -240,7 +210,7 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Checks if there are any handlers registered for a specific aggregate ID.
+        /// Checks if there are any handlers registered for an aggregate.
         /// </summary>
         /// <param name="aggregateId">The aggregate ID to check</param>
         /// <returns>True if handlers are registered for the aggregate, false otherwise</returns>
@@ -251,7 +221,6 @@ namespace com.DvosTools.bus
 
         /// <summary>
         /// Clears all handlers, buffered events, and queued events.
-        /// This is useful for test cleanup.
         /// </summary>
         public static void ClearAll()
         {
@@ -260,15 +229,10 @@ namespace com.DvosTools.bus
 
         /// <summary>
         /// Signals that a game object is ready to process its buffered events.
-        /// <para>
-        /// When you send routed events to game objects that aren't ready yet, those events
-        /// get buffered. Call this method when the game object is initialized and ready to
-        /// handle events. All buffered events for this aggregate will be processed immediately.
-        /// </para>
-        /// <para>
-        /// This is essential for proper event ordering - events sent before an object is
-        /// ready will be processed in the correct order once it becomes ready.
-        /// </para>
+        /// 
+        /// When routed events are sent to objects that aren't ready yet, they get buffered.
+        /// Call this when the object is initialized and ready to handle events. All buffered
+        /// events for this aggregate will be processed immediately.
         /// </summary>
         /// <param name="aggregateId">The game object ID that is now ready to process events</param>
         /// <example>
@@ -302,12 +266,12 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Gets the number of buffered events for a specific aggregate.
+        /// Gets the number of buffered events for an aggregate.
         /// </summary>
         /// <param name="aggregateId">The aggregate ID to check</param>
         /// <returns>The number of buffered events</returns>
         /// <example>
-        /// <code>
+        /// <code lang="csharp">
         /// // Check how many events are waiting for a player
         /// int bufferedCount = EventBus.GetBufferedEventCount(playerId);
         /// if (bufferedCount > 100)
@@ -322,7 +286,7 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Gets all aggregate IDs that have buffered events.
+        /// Gets all aggregate IDs with buffered events.
         /// </summary>
         /// <returns>Collection of aggregate IDs with buffered events</returns>
         public static IEnumerable<Guid> GetBufferedAggregateIds()
@@ -331,7 +295,7 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Gets the total number of buffered events across all aggregates.
+        /// Gets the total number of buffered events.
         /// </summary>
         /// <returns>Total number of buffered events</returns>
         public static int GetTotalBufferedEventCount()
@@ -340,11 +304,11 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Gets the number of events currently in the processing queue.
+        /// Gets the number of events in the processing queue.
         /// </summary>
         /// <returns>Number of events in the queue</returns>
         /// <example>
-        /// <code>
+        /// <code lang="csharp">
         /// // Monitor system health
         /// int queueSize = EventBus.GetQueueCount();
         /// if (queueSize > 1000)
@@ -362,12 +326,12 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Gets the number of registered handlers for a specific event type.
+        /// Gets the number of registered handlers for an event type.
         /// </summary>
         /// <typeparam name="T">The type of event to check</typeparam>
         /// <returns>Number of registered handlers</returns>
         /// <example>
-        /// <code>
+        /// <code lang="csharp">
         /// // Check how many handlers are listening for player events
         /// int handlerCount = EventBus.GetHandlerCount&lt;PlayerDiedEvent&gt;();
         /// Debug.Log("There are " + handlerCount + " handlers for PlayerDiedEvent");
@@ -383,12 +347,12 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Checks if there are any handlers registered for a specific event type.
+        /// Checks if there are any handlers registered for an event type.
         /// </summary>
         /// <typeparam name="T">The type of event to check</typeparam>
         /// <returns>True if handlers are registered, false otherwise</returns>
         /// <example>
-        /// <code>
+        /// <code lang="csharp">
         /// // Check if anyone is listening before sending an event
         /// if (EventBus.HasHandlers&lt;PlayerDiedEvent&gt;())
         /// {
@@ -406,7 +370,7 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Shuts down the event bus, cancelling background processing.
+        /// Shuts down the event bus.
         /// </summary>
         public static void Shutdown()
         {
@@ -415,8 +379,6 @@ namespace com.DvosTools.bus
 
         /// <summary>
         /// Cleans up all resources and resets the event bus state.
-        /// This should be called when you want to completely reset the event bus state.
-        /// Note: This will recreate singletons on next access.
         /// </summary>
         public static void Cleanup()
         {
@@ -435,20 +397,19 @@ namespace com.DvosTools.bus
             CoreEventBus.Dispose();
         }
 
+        // ===== EVENT SUBSCRIPTION =====
+
         /// <summary>
         /// Subscribes to events with handlers that run on Unity's main thread.
         /// 
-        /// Use this when your handler needs to access Unity APIs (GameObjects, Components, etc.)
-        /// or when you need to update the UI. All Unity API calls must happen on the main thread.
-        /// 
-        /// This is the most common choice for game logic handlers that interact with Unity objects.
-        /// Note: This method requires Unity to be available.
+        /// Use this when your handler needs to access Unity APIs or update the UI.
+        /// All Unity API calls must happen on the main thread.
         /// </summary>
         /// <typeparam name="T">The type of event to handle</typeparam>
         /// <param name="handler">The function to call when this event is received</param>
         /// <param name="aggregateId">Aggregate ID for routed events, or Guid.Empty for global handlers</param>
         /// <example>
-        /// <code>
+        /// <code lang="csharp">
         /// // Register a handler that updates UI (must run on main thread)
         /// EventBus.RegisterUnityHandler&lt;PlayerHealthChangedEvent&gt;(OnHealthChanged);
         /// 
@@ -484,10 +445,8 @@ namespace com.DvosTools.bus
         /// <summary>
         /// Subscribes to events with handlers that execute immediately on the current thread.
         /// 
-        /// Use this for synchronous event processing where you need the handler to complete
-        /// before the event sender continues. This blocks the sender until the handler finishes.
-        /// 
-        /// Good for critical event processing or when you need guaranteed immediate execution.
+        /// Use this for synchronous event processing. This blocks the sender until the
+        /// handler finishes. Good for critical event processing.
         /// </summary>
         /// <typeparam name="T">The type of event to handle</typeparam>
         /// <param name="handler">The function to call when this event is received</param>
@@ -500,10 +459,8 @@ namespace com.DvosTools.bus
         /// <summary>
         /// Subscribes to events with handlers that run on background threads.
         /// 
-        /// Use this for CPU-intensive processing, file I/O, network operations, or any work
-        /// that doesn't need to access Unity APIs. This keeps the main thread responsive.
-        /// 
-        /// Perfect for data processing, analytics, or any heavy computation triggered by events.
+        /// Use this for CPU-intensive processing, file I/O, or any work that doesn't need
+        /// to access Unity APIs. This keeps the main thread responsive.
         /// </summary>
         /// <typeparam name="T">The type of event to handle</typeparam>
         /// <param name="handler">The function to call when this event is received</param>
@@ -515,14 +472,13 @@ namespace com.DvosTools.bus
 
         /// <summary>
         /// Registers a handler with a specific aggregate ID for routed events.
-        /// This is a convenience method for the common case of routing events.
         /// </summary>
         /// <typeparam name="T">The type of event to handle</typeparam>
         /// <param name="handler">The handler function</param>
         /// <param name="aggregateId">The aggregate ID for routing</param>
         /// <param name="dispatcher">Optional dispatcher for handling the event</param>
         /// <example>
-        /// <code>
+        /// <code lang="csharp">
         /// // Register a routed handler for a specific player
         /// EventBus.RegisterRoutedHandler&lt;PlayerHealthChangedEvent&gt;(OnHealthChanged, playerId);
         /// 
@@ -546,13 +502,12 @@ namespace com.DvosTools.bus
 
         /// <summary>
         /// Registers a global handler that will receive all events of the specified type.
-        /// This is a convenience method for non-routed events.
         /// </summary>
         /// <typeparam name="T">The type of event to handle</typeparam>
         /// <param name="handler">The handler function</param>
         /// <param name="dispatcher">Optional dispatcher for handling the event</param>
         /// <example>
-        /// <code>
+        /// <code lang="csharp">
         /// // Register a global handler for all game state changes
         /// EventBus.RegisterGlobalHandler&lt;GameStateChangedEvent&gt;(OnGameStateChanged);
         /// 
@@ -572,11 +527,7 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Registers a global handler for events of a specific type.
-        /// 
-        /// This method is deprecated. Use RegisterGlobalHandler or RegisterHandler instead.
-        /// This method registers handlers that receive all events of the specified type
-        /// regardless of routing (equivalent to RegisterHandler with Guid.Empty).
+        /// [DEPRECATED] Registers a global handler for events.
         /// </summary>
         /// <typeparam name="T">The type of event to handle</typeparam>
         /// <param name="handler">The function to call when this event is received</param>
@@ -587,12 +538,14 @@ namespace com.DvosTools.bus
             EventBusService.RegisterHandler(handler, Guid.Empty, dispatcher);
         }
 
+        // ===== UTILITY METHODS =====
+
         /// <summary>
-        /// Checks if there are any buffered events for any aggregate.
+        /// Checks if there are any buffered events.
         /// </summary>
         /// <returns>True if there are any buffered events, false otherwise</returns>
         /// <example>
-        /// <code>
+        /// <code lang="csharp">
         /// // Check if any events are waiting to be processed
         /// if (EventBus.HasBufferedEvents())
         /// {
@@ -608,11 +561,11 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
-        /// Checks if there are any events currently in the processing queue.
+        /// Checks if there are any events in the processing queue.
         /// </summary>
         /// <returns>True if there are events in the queue, false otherwise</returns>
         /// <example>
-        /// <code>
+        /// <code lang="csharp">
         /// // Check if events are currently being processed
         /// if (EventBus.HasQueuedEvents())
         /// {
@@ -628,151 +581,97 @@ namespace com.DvosTools.bus
     }
 
     /// <summary>
-    /// Wrapper class for backwards compatibility with the instance API.
+    /// [DEPRECATED] Wrapper class for backwards compatibility with the instance API.
+    /// Use the static EventBus methods directly instead.
     /// </summary>
     [Obsolete("The instance API is deprecated.")]
     public class EventBusInstance
     {
         /// <summary>
-        /// Sends an event asynchronously. The event will be queued and processed by registered handlers.
+        /// [DEPRECATED] Sends an event asynchronously.
         /// </summary>
-        /// <typeparam name="T">The type of event to send</typeparam>
-        /// <param name="eventData">The event data to send</param>
-        [Obsolete("Use EventBus.Send() instead of EventBus.Instance.Send(). The instance API is deprecated.")]
-        public void Send<T>(T eventData) where T : class
-        {
-            EventBus.Send(eventData);
-        }
+        [Obsolete("Use EventBus.Send() instead of EventBus.Instance.Send().")]
+        public void Send<T>(T eventData) where T : class => EventBus.Send(eventData);
 
         /// <summary>
-        /// Sends an event synchronously and waits for all handlers to complete.
-        /// Use this when you need to ensure the event is fully processed before continuing.
+        /// [DEPRECATED] Sends an event synchronously and waits for completion.
         /// </summary>
-        /// <typeparam name="T">The type of event to send</typeparam>
-        /// <param name="eventData">The event data to send</param>
-        [Obsolete("Use EventBus.SendAndWait() instead of EventBus.Instance.SendAndWait(). The instance API is deprecated.")]
-        public void SendAndWait<T>(T eventData) where T : class
-        {
-            EventBus.SendAndWait(eventData);
-        }
+        [Obsolete("Use EventBus.SendAndWait() instead of EventBus.Instance.SendAndWait().")]
+        public void SendAndWait<T>(T eventData) where T : class => EventBus.SendAndWait(eventData);
 
         /// <summary>
-        /// Marks an aggregate as ready, processing any buffered events for that aggregate.
+        /// [DEPRECATED] Marks an aggregate as ready.
         /// </summary>
-        /// <param name="aggregateId">The aggregate ID to mark as ready</param>
-        [Obsolete("Use EventBus.AggregateReady() instead of EventBus.Instance.AggregateReady(). The instance API is deprecated.")]
-        public void AggregateReady(Guid aggregateId)
-        {
-            EventBus.AggregateReady(aggregateId);
-        }
+        [Obsolete("Use EventBus.AggregateReady() instead of EventBus.Instance.AggregateReady().")]
+        public void AggregateReady(Guid aggregateId) => EventBus.AggregateReady(aggregateId);
 
         /// <summary>
-        /// Gets the number of buffered events for a specific aggregate.
+        /// [DEPRECATED] Gets the number of buffered events for an aggregate.
         /// </summary>
-        /// <param name="aggregateId">The aggregate ID to check</param>
-        /// <returns>The number of buffered events</returns>
-        [Obsolete("Use EventBus.GetBufferedEventCount() instead of EventBus.Instance.GetBufferedEventCount(). The instance API is deprecated.")]
-        public int GetBufferedEventCount(Guid aggregateId)
-        {
-            return EventBus.GetBufferedEventCount(aggregateId);
-        }
+        [Obsolete("Use EventBus.GetBufferedEventCount() instead of EventBus.Instance.GetBufferedEventCount().")]
+        public int GetBufferedEventCount(Guid aggregateId) => EventBus.GetBufferedEventCount(aggregateId);
 
         /// <summary>
-        /// Gets all aggregate IDs that have buffered events.
+        /// [DEPRECATED] Gets all aggregate IDs with buffered events.
         /// </summary>
-        /// <returns>Collection of aggregate IDs with buffered events</returns>
-        [Obsolete("Use EventBus.GetBufferedAggregateIds() instead of EventBus.Instance.GetBufferedAggregateIds(). The instance API is deprecated.")]
-        public IEnumerable<Guid> GetBufferedAggregateIds()
-        {
-            return EventBus.GetBufferedAggregateIds();
-        }
+        [Obsolete("Use EventBus.GetBufferedAggregateIds() instead of EventBus.Instance.GetBufferedAggregateIds().")]
+        public IEnumerable<Guid> GetBufferedAggregateIds() => EventBus.GetBufferedAggregateIds();
 
         /// <summary>
-        /// Gets the total number of buffered events across all aggregates.
+        /// [DEPRECATED] Gets the total number of buffered events.
         /// </summary>
-        /// <returns>Total number of buffered events</returns>
-        [Obsolete("Use EventBus.GetTotalBufferedEventCount() instead of EventBus.Instance.GetTotalBufferedEventCount(). The instance API is deprecated.")]
-        public int GetTotalBufferedEventCount()
-        {
-            return EventBus.GetTotalBufferedEventCount();
-        }
+        [Obsolete("Use EventBus.GetTotalBufferedEventCount() instead of EventBus.Instance.GetTotalBufferedEventCount().")]
+        public int GetTotalBufferedEventCount() => EventBus.GetTotalBufferedEventCount();
 
         /// <summary>
-        /// Gets the number of events currently in the processing queue.
+        /// [DEPRECATED] Gets the number of events in the processing queue.
         /// </summary>
-        /// <returns>Number of events in the queue</returns>
-        [Obsolete("Use EventBus.GetQueueCount() instead of EventBus.Instance.GetQueueCount(). The instance API is deprecated.")]
-        public int GetQueueCount()
-        {
-            return EventBus.GetQueueCount();
-        }
+        [Obsolete("Use EventBus.GetQueueCount() instead of EventBus.Instance.GetQueueCount().")]
+        public int GetQueueCount() => EventBus.GetQueueCount();
 
         /// <summary>
-        /// Gets the number of registered handlers for a specific event type.
+        /// [DEPRECATED] Gets the number of registered handlers for an event type.
         /// </summary>
-        /// <typeparam name="T">The type of event to check</typeparam>
-        /// <returns>Number of registered handlers</returns>
-        [Obsolete("Use EventBus.GetHandlerCount() instead of EventBus.Instance.GetHandlerCount(). The instance API is deprecated.")]
-        public int GetHandlerCount<T>() where T : class
-        {
-            return EventBus.GetHandlerCount<T>();
-        }
+        [Obsolete("Use EventBus.GetHandlerCount() instead of EventBus.Instance.GetHandlerCount().")]
+        public int GetHandlerCount<T>() where T : class => EventBus.GetHandlerCount<T>();
 
         /// <summary>
-        /// Checks if there are any handlers registered for a specific event type.
+        /// [DEPRECATED] Checks if there are handlers for an event type.
         /// </summary>
-        /// <typeparam name="T">The type of event to check</typeparam>
-        /// <returns>True if handlers are registered, false otherwise</returns>
-        [Obsolete("Use EventBus.HasHandlers() instead of EventBus.Instance.HasHandlers(). The instance API is deprecated.")]
-        public bool HasHandlers<T>() where T : class
-        {
-            return EventBus.HasHandlers<T>();
-        }
+        [Obsolete("Use EventBus.HasHandlers() instead of EventBus.Instance.HasHandlers().")]
+        public bool HasHandlers<T>() where T : class => EventBus.HasHandlers<T>();
 
         /// <summary>
-        /// Registers a global handler for events of a specific type.
-        /// 
-        /// This method is deprecated. Use EventBus.RegisterGlobalHandler or EventBus.RegisterHandler instead.
-        /// This method registers handlers that receive all events of the specified type
-        /// regardless of routing (equivalent to RegisterHandler with Guid.Empty).
+        /// [DEPRECATED] Registers a global handler for events.
         /// </summary>
-        /// <typeparam name="T">The type of event to handle</typeparam>
-        /// <param name="handler">The function to call when this event is received</param>
-        /// <param name="dispatcher">Which thread to run the handler on (defaults to background thread)</param>
-        [Obsolete("Use EventBus.RegisterGlobalHandler or EventBus.RegisterHandler instead. The instance API is deprecated and this method will be removed in a future version.")]
+        [Obsolete("Use EventBus.RegisterGlobalHandler or EventBus.RegisterHandler instead.")]
         public void RegisterStaticHandler<T>(Action<T> handler, IDispatcher? dispatcher = null) where T : class
         {
             EventBusService.RegisterHandler(handler, Guid.Empty, dispatcher);
         }
 
         /// <summary>
-        /// Shuts down the event bus, cancelling background processing.
+        /// [DEPRECATED] Shuts down the event bus.
         /// </summary>
-        [Obsolete("Use EventBus.Shutdown() instead of EventBus.Instance.Shutdown(). The instance API is deprecated.")]
-        public void Shutdown()
-        {
-            EventBus.Shutdown();
-        }
+        [Obsolete("Use EventBus.Shutdown() instead of EventBus.Instance.Shutdown().")]
+        public void Shutdown() => EventBus.Shutdown();
 
         /// <summary>
-        /// Direct access to handlers for backwards compatibility.
-        /// Consider using GetHandlerCount() and HasHandlers() instead.
+        /// [DEPRECATED] Direct access to handlers.
         /// </summary>
-        [Obsolete("Direct access to Handlers is deprecated. Use EventBus.GetHandlerCount() and EventBus.HasHandlers() instead.")]
+        [Obsolete("Use EventBus.GetHandlerCount() and EventBus.HasHandlers() instead.")]
         public Dictionary<Type, List<Subscription>> Handlers => EventBusCore.Instance.Handlers;
 
         /// <summary>
-        /// Direct access to even queue for backwards compatibility.
-        /// Consider using GetQueueCount() and HasQueuedEvents() instead.
+        /// [DEPRECATED] Direct access to event queue.
         /// </summary>
-        [Obsolete("Direct access to EventQueue is deprecated. Use EventBus.GetQueueCount() and EventBus.HasQueuedEvents() instead.")]
+        [Obsolete("Use EventBus.GetQueueCount() and EventBus.HasQueuedEvents() instead.")]
         public Queue<QueuedEvent> EventQueue => EventBusCore.Instance.EventQueue;
 
         /// <summary>
-        /// Direct access to queue lock for backwards compatibility.
-        /// Consider using the static API methods instead.
+        /// [DEPRECATED] Direct access to queue lock.
         /// </summary>
-        [Obsolete("Direct access to QueueLock is deprecated. Use the static API methods instead.")]
+        [Obsolete("Use the static API methods instead.")]
         public object QueueLock => EventBusCore.Instance.QueueLock;
     }
 }
