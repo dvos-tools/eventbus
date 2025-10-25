@@ -51,19 +51,18 @@ EventBus.Send(new PlayerDiedEvent { PlayerName = "Player1", Score = 1000 });
 
 ## Documentation
 
-📚 **Complete documentation is available in the `wiki/` folder:**
+📚 **Complete documentation is available in multiple formats:**
 
-- **[01-Home](wiki/01-Home.md)** - Start here for an overview
-- **[02-Quick-Start-Guide](wiki/02-Quick-Start-Guide.md)** - Get up and running quickly
-- **[03-Core-Concepts](wiki/03-Core-Concepts.md)** - Learn the fundamentals
-- **[04-Your-First-Event-System](wiki/04-Your-First-Event-System.md)** - Complete example
-- **[05-Threading-and-Dispatchers](wiki/05-Threading-and-Dispatchers.md)** - Threading model
-- **[06-Event-Routing](wiki/06-Event-Routing.md)** - Targeted event delivery
-- **[07-Event-Buffering](wiki/07-Event-Buffering.md)** - Event storage and processing
-- **[08-Best-Practices](wiki/08-Best-Practices.md)** - Professional patterns
-- **[09-Common-Patterns](wiki/09-Common-Patterns.md)** - Real-world examples
-- **[10-Troubleshooting](wiki/10-Troubleshooting.md)** - Common problems and solutions
-- **[API-Reference](wiki/API-Reference/)** - Complete method reference
+### Online (GitHub Wiki)
+- **[Wiki Home](https://github.com/dvos-tools/eventbus/wiki)** - Start here for an overview
+- **[Quick Start Guide](https://github.com/dvos-tools/eventbus/wiki/Quick-Start-Guide)** - Get up and running quickly
+- **[Core Concepts](https://github.com/dvos-tools/eventbus/wiki/Core-Concepts)** - Learn the fundamentals
+- **[Your First Event System](https://github.com/dvos-tools/eventbus/wiki/Your-First-Event-System)** - Complete example
+- **[Threading and Dispatchers](https://github.com/dvos-tools/eventbus/wiki/Threading-and-Dispatchers)** - Threading model
+- **[Event Routing](https://github.com/dvos-tools/eventbus/wiki/Event-Routing)** - Targeted event delivery
+- **[Event Buffering](https://github.com/dvos-tools/eventbus/wiki/Event-Buffering)** - Event storage and processing
+- **[Best Practices](https://github.com/dvos-tools/eventbus/wiki/Best-Practices)** - Professional patterns
+- **[API Reference](https://github.com/dvos-tools/eventbus/wiki/API-Reference)** - Complete method reference
 
 ## License
 
