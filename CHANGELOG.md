@@ -1,3 +1,10 @@
+# [1.12.0](https://github.com/dvos-tools/eventbus/compare/v1.11.0...v1.12.0) (2026-03-29)
+
+
+### Features
+
+* added correct marking arrgeragate handlers ready for flush ([3d31dfe](https://github.com/dvos-tools/eventbus/commit/3d31dfec4cf4796d86f28da48d7d69b7f12818e7))
+
 # [1.11.0](https://github.com/dvos-tools/eventbus/compare/v1.10.2...v1.11.0) (2026-03-29)
 
 
