@@ -267,6 +267,22 @@ namespace com.DvosTools.bus
         }
 
         /// <summary>
+        /// Partial flush: scans the aggregate buffer and releases only events that correspond to one of
+        /// the given delegate references (same instances passed to
+        /// <see cref="RegisterHandler{T}"/> / <see cref="RegisterRoutedHandler{T}"/>).
+        /// Each released event is delivered the same way as <see cref="AggregateReady(Guid)"/> (same
+        /// dispatchers, global handlers, and all routed handlers for that aggregate and event type).
+        /// Buffered events that do not match any listed handler stay in the buffer until a full
+        /// <see cref="AggregateReady(Guid)"/> or another partial flush applies.
+        /// </summary>
+        /// <param name="aggregateId">The aggregate whose buffer is scanned</param>
+        /// <param name="handlers">Delegates that identify which buffered event kinds to release</param>
+        public static void AggregateReady(Guid aggregateId, params Delegate[] handlers)
+        {
+            EventBusService.AggregateReady(aggregateId, handlers);
+        }
+
+        /// <summary>
         /// Gets the number of buffered events for an aggregate.
         /// </summary>
         /// <param name="aggregateId">The aggregate ID to check</param>
@@ -499,7 +515,7 @@ namespace com.DvosTools.bus
                 throw new ArgumentException("Aggregate ID cannot be empty for routed handlers", nameof(aggregateId));
                 
             RegisterHandler(handler, aggregateId, dispatcher);
-            AggregateReady(aggregateId);
+            AggregateReady(aggregateId, handler);
         }
 
         /// <summary>
@@ -606,6 +622,10 @@ namespace com.DvosTools.bus
         /// </summary>
         [Obsolete("Use EventBus.AggregateReady() instead of EventBus.Instance.AggregateReady().")]
         public void AggregateReady(Guid aggregateId) => EventBus.AggregateReady(aggregateId);
+
+        /// <inheritdoc cref="EventBus.AggregateReady(Guid, Delegate[])"/>
+        [Obsolete("Use EventBus.AggregateReady() instead of EventBus.Instance.AggregateReady().")]
+        public void AggregateReady(Guid aggregateId, params Delegate[] handlers) => EventBus.AggregateReady(aggregateId, handlers);
 
         /// <summary>
         /// [DEPRECATED] Gets the number of buffered events for an aggregate.

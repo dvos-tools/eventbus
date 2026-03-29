@@ -65,11 +65,23 @@ namespace com.DvosTools.bus.Core
             }
         }
 
-        public void AggregateReady(Guid aggregateId)
+        public void AggregateReady(Guid aggregateId, IReadOnlyCollection<Delegate>? handlersForReadyFlush = null)
         {
             if (aggregateId == Guid.Empty)
             {
                 EventBusLogger.LogWarning("Cannot mark empty aggregate ID as ready");
+                return;
+            }
+
+            if (handlersForReadyFlush != null)
+            {
+                if (handlersForReadyFlush.Count == 0)
+                {
+                    EventBusLogger.LogWarning("AggregateReady with an empty handler list does nothing; use AggregateReady(aggregateId) without handlers to flush the entire buffer.");
+                    return;
+                }
+
+                AggregateReadyForHandlers(aggregateId, handlersForReadyFlush);
                 return;
             }
 
@@ -88,6 +100,60 @@ namespace com.DvosTools.bus.Core
             }
             
             EventBusLogger.Log($"Processed {eventsToProcess.Count} buffered events immediately (aggregate ID: {aggregateId})");
+        }
+
+        private void AggregateReadyForHandlers(Guid aggregateId, IReadOnlyCollection<Delegate> handlers)
+        {
+            int processedCount = 0;
+            lock (_core.BufferedEventsLock)
+            {
+                if (!_core.BufferedEvents.TryGetValue(aggregateId, out var bufferedQueue))
+                {
+                    EventBusLogger.Log($"No buffered events found for aggregate ID {aggregateId}");
+                    return;
+                }
+
+                var remaining = new Queue<QueuedEvent>();
+                while (bufferedQueue.Count > 0)
+                {
+                    var queuedEvent = bufferedQueue.Dequeue();
+                    if (ShouldProcessBufferedEventForReadyHandlers(queuedEvent, aggregateId, handlers))
+                    {
+                        ProcessEventImmediately(queuedEvent);
+                        processedCount++;
+                    }
+                    else
+                    {
+                        remaining.Enqueue(queuedEvent);
+                    }
+                }
+
+                if (remaining.Count > 0)
+                    _core.BufferedEvents[aggregateId] = remaining;
+                else
+                    _core.BufferedEvents.Remove(aggregateId);
+            }
+
+            EventBusLogger.Log($"Processed {processedCount} buffered events for specified handlers (aggregate ID: {aggregateId})");
+        }
+
+        /// <summary>
+        /// Partial flush: only dequeue buffered events that correspond to one of the given handler
+        /// delegate references. Each released event is delivered via <see cref="ProcessEventImmediately"/>,
+        /// matching the full AggregateReady path (not a separate filtered delivery).
+        /// </summary>
+        private bool ShouldProcessBufferedEventForReadyHandlers(QueuedEvent queuedEvent, Guid aggregateId, IReadOnlyCollection<Delegate> handlers)
+        {
+            lock (_core.HandlersLock)
+            {
+                if (!_core.Handlers.TryGetValue(queuedEvent.EventType, out var handlerInfos))
+                    return false;
+
+                return (from sub in handlerInfos
+                    where sub.AggregateId == aggregateId
+                    select sub.OriginalHandler != null && handlers.Any(h => ReferenceEquals(h, sub.OriginalHandler)) ||
+                           true).FirstOrDefault();
+            }
         }
 
         public async Task ProcessEventAsync(QueuedEvent queuedEvent)
