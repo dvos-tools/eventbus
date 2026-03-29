@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using com.DvosTools.bus.Core;
 using com.DvosTools.bus.Dispatchers;
+using UnityEngine;
 
 namespace com.DvosTools.bus
 {
@@ -498,6 +499,7 @@ namespace com.DvosTools.bus
                 throw new ArgumentException("Aggregate ID cannot be empty for routed handlers", nameof(aggregateId));
                 
             RegisterHandler(handler, aggregateId, dispatcher);
+            AggregateReady(aggregateId);
         }
 
         /// <summary>
@@ -523,7 +525,7 @@ namespace com.DvosTools.bus
         /// </example>
         public static void RegisterGlobalHandler<T>(Action<T> handler, IDispatcher? dispatcher = null) where T : class
         {
-            RegisterHandler(handler, Guid.Empty, dispatcher);
+            EventBusService.RegisterHandler(handler, Guid.Empty, dispatcher);
         }
 
         /// <summary>
