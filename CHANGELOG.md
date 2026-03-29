@@ -1,3 +1,10 @@
+# [1.11.0](https://github.com/dvos-tools/eventbus/compare/v1.10.2...v1.11.0) (2026-03-29)
+
+
+### Features
+
+* added auto mark as ready ([6e943b2](https://github.com/dvos-tools/eventbus/commit/6e943b263fd955303d30220fa82f773dd0831080))
+
 ## [1.10.2](https://github.com/dvos-tools/eventbus/compare/v1.10.1...v1.10.2) (2025-10-25)
 
 
