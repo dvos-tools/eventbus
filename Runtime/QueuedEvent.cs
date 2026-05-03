@@ -7,6 +7,7 @@ namespace com.DvosTools.bus
         public object EventData;
         public Type EventType;
         public DateTime QueuedAt;
+        public Guid AggregateId;
 
         public QueuedEvent(
             object eventData,
@@ -17,6 +18,7 @@ namespace com.DvosTools.bus
             EventType = eventType;
             EventData = eventData;
             QueuedAt = queuedAt == default ? DateTime.UtcNow : queuedAt;
+            AggregateId = eventData is IRoutableEvent r ? r.AggregateId : Guid.Empty;
         }
     }
 }

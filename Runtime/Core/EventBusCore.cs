@@ -11,16 +11,19 @@ namespace com.DvosTools.bus.Core
     {
         private static EventBusCore? _instance;
         private static EventBusService? _service;
-        
-        public readonly Dictionary<Type, List<Subscription>> Handlers = new();
+
+        // Event handlers indexed by event type, then by aggregate id.
+        // Guid.Empty bucket holds global (non-routed) handlers.
+        public readonly Dictionary<Type, Dictionary<Guid, List<Subscription>>> Handlers = new();
         public readonly Queue<QueuedEvent> EventQueue = new();
         public readonly Dictionary<Guid, Queue<QueuedEvent>> BufferedEvents = new();
         public readonly object QueueLock = new();
         public readonly object BufferedEventsLock = new();
         public readonly object HandlersLock = new();
         private CancellationTokenSource _cancellationTokenSource;
-        
-        
+        private SemaphoreSlim _queueSignal = new(0);
+
+
 
         public static EventBusCore Instance => _instance ??= new EventBusCore();
         public static EventBusService Service => _service ??= new EventBusService(Instance);
@@ -31,15 +34,24 @@ namespace com.DvosTools.bus.Core
             _ = Task.Run(ProcessEventQueueAsync, _cancellationTokenSource.Token); // Start the background queue processor
         }
 
+        /// <summary>Signal the worker that a new event has been enqueued.</summary>
+        public void NotifyQueued()
+        {
+            try { _queueSignal.Release(); }
+            catch (ObjectDisposedException) { /* shutting down */ }
+            catch (SemaphoreFullException) { /* impossible without max-count, defensive */ }
+        }
+
         private async Task ProcessEventQueueAsync()
         {
-            while (!_cancellationTokenSource.Token.IsCancellationRequested)
+            var token = _cancellationTokenSource.Token;
+            while (!token.IsCancellationRequested)
             {
                 try
                 {
+                    await _queueSignal.WaitAsync(token);
+
                     QueuedEvent? eventToProcess = null;
-                    
-                    // Get one event at a time
                     lock (QueueLock)
                     {
                         if (EventQueue.Count > 0)
@@ -47,20 +59,23 @@ namespace com.DvosTools.bus.Core
                     }
 
                     if (eventToProcess != null)
-                    {
                         await Service.ProcessEventAsync(eventToProcess);
-                    }
-                    else
-                    {
-                        await Task.Yield();
-                    }
+                    // else: stale signal (e.g. ClearAll drained the queue). Loop back to wait.
                 }
                 catch (OperationCanceledException)
                 {
                     break; // Expected when cancellation is requested
                 }
+                catch (ObjectDisposedException)
+                {
+                    break; // Signal disposed during teardown
+                }
                 catch (Exception ex)
                 {
+                    // If cancellation has been requested, the exception is almost certainly
+                    // shutdown-related (race with field replacement). Suppress to avoid spurious
+                    // error logs failing tests that watch for unhandled error logs.
+                    if (token.IsCancellationRequested) break;
                     EventBusLogger.LogError($"Queue processor error: {ex.Message}");
                 }
             }
@@ -112,29 +127,33 @@ namespace com.DvosTools.bus.Core
             {
                 Handlers.Clear();
             }
-            
+
             // Clear buffered events
             lock (BufferedEventsLock)
             {
                 BufferedEvents.Clear();
             }
-            
+
             // Clear event queue
             lock (QueueLock)
             {
                 EventQueue.Clear();
             }
-            
+
             // Reset the background task to ensure it's running properly
             ResetBackgroundTask();
         }
 
         public void ResetBackgroundTask()
         {
-            // Cancel the current background task
+            // Cancel the current background task. The old worker will exit on the next loop
+            // iteration via OperationCanceledException from WaitAsync(oldToken).
             Shutdown();
-            
-            // Create a new CancellationTokenSource and restart the background task
+
+            // Recreate the CTS for the new worker. The semaphore is kept across resets — disposing
+            // it here races with the old worker still parked in WaitAsync (it would throw an
+            // unexpected ObjectDisposedException). Stale releases on the shared semaphore are
+            // harmless: the next worker will wake, find an empty queue, and loop back to wait.
             _cancellationTokenSource.Dispose();
             _cancellationTokenSource = new CancellationTokenSource();
             _ = Task.Run(ProcessEventQueueAsync, _cancellationTokenSource.Token);
@@ -145,26 +164,17 @@ namespace com.DvosTools.bus.Core
             var eventType = typeof(T);
             lock (HandlersLock)
             {
-                if (Handlers.TryGetValue(eventType, out var handler))
-                {
-                    handler.Clear();
-                }
+                Handlers.Remove(eventType);
             }
-            // Clear all queued events for this event type
+            // Clear all queued events for this event type (alloc-free filter)
             lock (QueueLock)
             {
-                var eventsToKeep = new Queue<QueuedEvent>();
-                while (EventQueue.Count > 0)
+                int count = EventQueue.Count;
+                for (int i = 0; i < count; i++)
                 {
                     var queuedEvent = EventQueue.Dequeue();
                     if (queuedEvent.EventType != eventType)
-                    {
-                        eventsToKeep.Enqueue(queuedEvent);
-                    }
-                }
-                while (eventsToKeep.Count > 0)
-                {
-                    EventQueue.Enqueue(eventsToKeep.Dequeue());
+                        EventQueue.Enqueue(queuedEvent);
                 }
             }
         }
@@ -189,26 +199,19 @@ namespace com.DvosTools.bus.Core
 
         public void ClearEventsForAggregate(Guid aggregateId)
         {
-            
-            // Clear queued events for this aggregate
+
+            // Clear queued events for this aggregate (alloc-free filter via QueuedEvent.AggregateId field)
             lock (QueueLock)
             {
-                var eventsToKeep = new Queue<QueuedEvent>();
-                while (EventQueue.Count > 0)
+                int count = EventQueue.Count;
+                for (int i = 0; i < count; i++)
                 {
                     var queuedEvent = EventQueue.Dequeue();
-                    var routedEvent = RoutedQueuedEvent.FromQueuedEvent(queuedEvent);
-                    if (routedEvent.AggregateId != aggregateId)
-                    {
-                        eventsToKeep.Enqueue(queuedEvent);
-                    }
-                }
-                while (eventsToKeep.Count > 0)
-                {
-                    EventQueue.Enqueue(eventsToKeep.Dequeue());
+                    if (queuedEvent.AggregateId != aggregateId)
+                        EventQueue.Enqueue(queuedEvent);
                 }
             }
-            
+
             // Clear buffered events for this aggregate
             lock (BufferedEventsLock)
             {
@@ -223,9 +226,9 @@ namespace com.DvosTools.bus.Core
             {
                 foreach (var eventType in Handlers.Keys.ToList())
                 {
-                    var handlers = Handlers[eventType];
-                    handlers.RemoveAll(sub => sub.AggregateId == aggregateId);
-                    if (handlers.Count == 0) Handlers.Remove(eventType);
+                    var byAggregate = Handlers[eventType];
+                    byAggregate.Remove(aggregateId);
+                    if (byAggregate.Count == 0) Handlers.Remove(eventType);
                 }
             }
             ClearEventsForAggregate(aggregateId);
@@ -237,10 +240,10 @@ namespace com.DvosTools.bus.Core
             var eventType = typeof(T);
             lock (HandlersLock)
             {
-                if (Handlers.TryGetValue(eventType, out var handlers))
+                if (Handlers.TryGetValue(eventType, out var byAggregate))
                 {
-                    handlers.RemoveAll(sub => sub.AggregateId == aggregateId);
-                    if (handlers.Count == 0) Handlers.Remove(eventType);
+                    byAggregate.Remove(aggregateId);
+                    if (byAggregate.Count == 0) Handlers.Remove(eventType);
                 }
             }
             ClearEventsForAggregate(aggregateId);
@@ -249,30 +252,35 @@ namespace com.DvosTools.bus.Core
         public void DisposeHandlerFromAggregate<T>(Action<T> handler, Guid aggregateId) where T : class
         {
             if (aggregateId == Guid.Empty) return;
-            
+
             bool hasRemainingHandlers = false;
             lock (HandlersLock)
             {
                 var eventType = typeof(T);
-                if (Handlers.TryGetValue(eventType, out var handlers))
+                if (Handlers.TryGetValue(eventType, out var byAggregate))
                 {
-                    handlers.RemoveAll(sub => {
-                        return sub.OriginalHandler == handler && sub.AggregateId == aggregateId;
-                    });
-                    
-                    if (handlers.Count == 0) 
+                    if (byAggregate.TryGetValue(aggregateId, out var list))
+                    {
+                        list.RemoveAll(sub => ReferenceEquals(sub.OriginalHandler, handler));
+                        if (list.Count == 0) byAggregate.Remove(aggregateId);
+                    }
+                    if (byAggregate.Count == 0)
                     {
                         Handlers.Remove(eventType);
                     }
-                    else
+                }
+
+                // Check if there are any remaining handlers for this aggregate across all event types
+                foreach (var byAgg in Handlers.Values)
+                {
+                    if (byAgg.TryGetValue(aggregateId, out var list) && list.Count > 0)
                     {
-                        // Check if there are any remaining handlers for this aggregate across all event types
-                        hasRemainingHandlers = Handlers.Values.Any(handlerList => 
-                            handlerList.Any(sub => sub.AggregateId == aggregateId));
+                        hasRemainingHandlers = true;
+                        break;
                     }
                 }
             }
-            
+
             // Only clear events if there are no remaining handlers for this aggregate
             if (!hasRemainingHandlers)
             {
@@ -284,7 +292,13 @@ namespace com.DvosTools.bus.Core
         {
             lock (HandlersLock)
             {
-                return Handlers.Values.Sum(handlers => handlers.Count(sub => sub.AggregateId == aggregateId));
+                int total = 0;
+                foreach (var byAgg in Handlers.Values)
+                {
+                    if (byAgg.TryGetValue(aggregateId, out var list))
+                        total += list.Count;
+                }
+                return total;
             }
         }
 
@@ -293,25 +307,55 @@ namespace com.DvosTools.bus.Core
             return GetHandlerCountForAggregate(aggregateId) > 0;
         }
 
+        public int GetHandlerCount(Type eventType)
+        {
+            lock (HandlersLock)
+            {
+                if (!Handlers.TryGetValue(eventType, out var byAggregate)) return 0;
+                int total = 0;
+                foreach (var list in byAggregate.Values) total += list.Count;
+                return total;
+            }
+        }
+
+        /// <summary>
+        /// Builds a flat snapshot of (eventType -> all subscriptions) for the deprecated public API.
+        /// </summary>
+        public Dictionary<Type, List<Subscription>> SnapshotFlatHandlers()
+        {
+            lock (HandlersLock)
+            {
+                var snapshot = new Dictionary<Type, List<Subscription>>(Handlers.Count);
+                foreach (var (eventType, byAggregate) in Handlers)
+                {
+                    var flat = new List<Subscription>();
+                    foreach (var list in byAggregate.Values) flat.AddRange(list);
+                    snapshot[eventType] = flat;
+                }
+                return snapshot;
+            }
+        }
+
         public void Dispose()
         {
             // Cancel the background task
             Shutdown();
-            
-            // Dispose the cancellation token source
+
+            // Dispose the cancellation token source and signal
             _cancellationTokenSource.Dispose();
-            
+            try { _queueSignal.Dispose(); } catch (ObjectDisposedException) { /* already */ }
+
             // Clear all collections to free memory
             lock (HandlersLock)
             {
                 Handlers.Clear();
             }
-            
+
             lock (BufferedEventsLock)
             {
                 BufferedEvents.Clear();
             }
-            
+
             lock (QueueLock)
             {
                 EventQueue.Clear();
