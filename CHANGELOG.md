@@ -1,3 +1,10 @@
+# [1.13.0](https://github.com/dvos-tools/eventbus/compare/v1.12.0...v1.13.0) (2026-05-03)
+
+
+### Features
+
+* refactor dispatchers and event queue for improved handler state management ([#31](https://github.com/dvos-tools/eventbus/issues/31)) ([18db3a0](https://github.com/dvos-tools/eventbus/commit/18db3a00de345614f7863c17fb20c66ede3480a4))
+
 # [1.12.0](https://github.com/dvos-tools/eventbus/compare/v1.11.0...v1.12.0) (2026-03-29)
 
 
