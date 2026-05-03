@@ -356,11 +356,7 @@ namespace com.DvosTools.bus
         /// </example>
         public static int GetHandlerCount<T>() where T : class
         {
-            var eventType = typeof(T);
-            lock (CoreEventBus.HandlersLock)
-            {
-                return CoreEventBus.Handlers.TryGetValue(eventType, out var handlers) ? handlers.Count : 0;
-            }
+            return CoreEventBus.GetHandlerCount(typeof(T));
         }
 
         /// <summary>
@@ -679,10 +675,10 @@ namespace com.DvosTools.bus
         public void Shutdown() => EventBus.Shutdown();
 
         /// <summary>
-        /// [DEPRECATED] Direct access to handlers.
+        /// [DEPRECATED] Direct access to handlers (returns a flattened snapshot).
         /// </summary>
         [Obsolete("Use EventBus.GetHandlerCount() and EventBus.HasHandlers() instead.")]
-        public Dictionary<Type, List<Subscription>> Handlers => EventBusCore.Instance.Handlers;
+        public Dictionary<Type, List<Subscription>> Handlers => EventBusCore.Instance.SnapshotFlatHandlers();
 
         /// <summary>
         /// [DEPRECATED] Direct access to event queue.

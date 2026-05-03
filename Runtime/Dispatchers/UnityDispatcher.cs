@@ -9,14 +9,16 @@ namespace com.DvosTools.bus.Dispatchers
 {
     internal class QueuedAction
     {
-        public Action Action { get; }
+        public Action<object> Handler { get; }
+        public object State { get; }
         public TaskCompletionSource<bool> CompletionSource { get; }
         public string? EventTypeName { get; }
         public Guid? AggregateId { get; }
 
-        public QueuedAction(Action action, string? eventTypeName = null, Guid? aggregateId = null)
+        public QueuedAction(Action<object> handler, object state, string? eventTypeName = null, Guid? aggregateId = null)
         {
-            Action = action ?? throw new ArgumentNullException(nameof(action));
+            Handler = handler ?? throw new ArgumentNullException(nameof(handler));
+            State = state;
             CompletionSource = new TaskCompletionSource<bool>();
             EventTypeName = eventTypeName;
             AggregateId = aggregateId;
@@ -65,35 +67,30 @@ namespace com.DvosTools.bus.Dispatchers
             }
         }
 
-        public async Task DispatchAndWaitAsync(Action? action, string? eventTypeName = null, Guid? aggregateId = null)
+        public async Task DispatchAndWaitAsync(Action<object> handler, object state, string? eventTypeName = null, Guid? aggregateId = null)
         {
-            if (action == null) return;
+            if (handler == null) return;
             try
             {
                 if (SynchronizationContext.Current == _mainThreadContext)
                 {
-                    // Already on the main thread, execute immediately
-                    action.Invoke();
+                    handler(state);
                 }
                 else
                 {
-                    // On background thread, queue the action and wait for completion
-                    // This maintains FIFO order by ensuring each action completes before the next
-                    var queuedAction = new QueuedAction(action, eventTypeName, aggregateId);
-                    
+                    var queuedAction = new QueuedAction(handler, state, eventTypeName, aggregateId);
+
                     lock (_queueLock)
                     {
                         _actionQueue.Enqueue(queuedAction);
                     }
-                    
-                    // Wait for the action to complete on the main thread
-                    // This ensures FIFO order - each event waits for the previous one to complete
+
                     await queuedAction.CompletionSource.Task;
                 }
             }
             catch (Exception ex)
             {
-                var errorMessage = aggregateId.HasValue 
+                var errorMessage = aggregateId.HasValue
                     ? $"DispatchAndWaitAsync error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
                     : $"DispatchAndWaitAsync error for {eventTypeName}: {ex.Message}";
                 EventBusLogger.LogError(errorMessage);
@@ -110,17 +107,17 @@ namespace com.DvosTools.bus.Dispatchers
                 if (_actionQueue.Count > 0)
                     queuedAction = _actionQueue.Dequeue();
             }
-            
+
             if (queuedAction != null)
             {
                 try
                 {
-                    queuedAction.Action.Invoke();
+                    queuedAction.Handler(queuedAction.State);
                     queuedAction.CompletionSource.SetResult(true);
                 }
                 catch (Exception ex)
                 {
-                    var errorMessage = queuedAction.AggregateId.HasValue 
+                    var errorMessage = queuedAction.AggregateId.HasValue
                         ? $"Main thread action error for {queuedAction.EventTypeName} (ID: {queuedAction.AggregateId}): {ex.Message}"
                         : $"Main thread action error for {queuedAction.EventTypeName}: {ex.Message}";
                     EventBusLogger.LogError(errorMessage);
@@ -129,28 +126,29 @@ namespace com.DvosTools.bus.Dispatchers
             }
         }
 
-        public void Dispatch(Action? action, string? eventTypeName = null, Guid? aggregateId = null)
+        public void Dispatch(Action<object> handler, object state, string? eventTypeName = null, Guid? aggregateId = null)
         {
-            if (action == null) return;
+            if (handler == null) return;
             try
             {
                 if (_mainThreadContext != null)
                 {
-                    // Use SynchronizationContext.Post to avoid blocking - fire and forget
-                    _mainThreadContext.Post(_ => 
+                    var box = new QueuedAction(handler, state, eventTypeName, aggregateId);
+                    _mainThreadContext.Post(s =>
                     {
+                        var b = (QueuedAction)s!;
                         try
                         {
-                            action.Invoke();
+                            b.Handler(b.State);
                         }
                         catch (Exception ex)
                         {
-                            var errorMessage = aggregateId.HasValue 
-                                ? $"Handler error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
-                                : $"Handler error for {eventTypeName}: {ex.Message}";
+                            var errorMessage = b.AggregateId.HasValue
+                                ? $"Handler error for {b.EventTypeName} (ID: {b.AggregateId}): {ex.Message}"
+                                : $"Handler error for {b.EventTypeName}: {ex.Message}";
                             EventBusLogger.LogError(errorMessage);
                         }
-                    }, null);
+                    }, box);
                 }
                 else
                 {
@@ -159,42 +157,37 @@ namespace com.DvosTools.bus.Dispatchers
             }
             catch (Exception ex)
             {
-                var errorMessage = aggregateId.HasValue 
+                var errorMessage = aggregateId.HasValue
                     ? $"Dispatch error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
                     : $"Dispatch error for {eventTypeName}: {ex.Message}";
                 EventBusLogger.LogError(errorMessage);
             }
         }
 
-        public void DispatchAndWait(Action? action, string? eventTypeName = null, Guid? aggregateId = null)
+        public void DispatchAndWait(Action<object> handler, object state, string? eventTypeName = null, Guid? aggregateId = null)
         {
-            if (action == null) return;
+            if (handler == null) return;
             try
             {
                 if (SynchronizationContext.Current == _mainThreadContext)
                 {
-                    // Already on the main thread, execute immediately
-                    action.Invoke();
+                    handler(state);
                 }
                 else
                 {
-                    // On background thread, queue the action and wait for completion
-                    // This maintains FIFO order by ensuring each action completes before the next
-                    var queuedAction = new QueuedAction(action, eventTypeName, aggregateId);
-                    
+                    var queuedAction = new QueuedAction(handler, state, eventTypeName, aggregateId);
+
                     lock (_queueLock)
                     {
                         _actionQueue.Enqueue(queuedAction);
                     }
-                    
-                    // Wait for the action to complete on the main thread
-                    // This ensures FIFO order - each event waits for the previous one to complete
+
                     queuedAction.CompletionSource.Task.Wait();
                 }
             }
             catch (Exception ex)
             {
-                var errorMessage = aggregateId.HasValue 
+                var errorMessage = aggregateId.HasValue
                     ? $"DispatchAndWait error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
                     : $"DispatchAndWait error for {eventTypeName}: {ex.Message}";
                 EventBusLogger.LogError(errorMessage);
@@ -207,7 +200,6 @@ namespace com.DvosTools.bus.Dispatchers
         /// </summary>
         public void Cleanup()
         {
-            // Complete all pending TaskCompletionSources to prevent hanging
             lock (_queueLock)
             {
                 while (_actionQueue.Count > 0)
@@ -227,7 +219,6 @@ namespace com.DvosTools.bus.Dispatchers
                 }
             }
 
-            // Clear static references
             _instance = null;
             _mainThreadContext = null;
         }
