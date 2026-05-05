@@ -106,7 +106,7 @@ namespace com.DvosTools.bus
             EventBus.Send(event3);
 
             // Use ImmediateDispatcher to guarantee FIFO order processing
-            EventBus.RegisterHandler<RoutableTestEvent>(evt => processedOrder.Add(evt.Data), aggregateId, new ImmediateDispatcher());
+            EventBus.RegisterHandler<RoutableTestEvent>(evt => processedOrder.Add(evt.Data), aggregateId, new TestSyncDispatcher());
 
             // Act
             EventBus.AggregateReady(aggregateId);
@@ -216,7 +216,7 @@ namespace com.DvosTools.bus
             var testEvent = new RoutableTestEvent { AggregateId = aggregateId, Data = "Test Data" };
             var handlerCalled = false;
 
-            EventBus.RegisterHandler<RoutableTestEvent>(_ => handlerCalled = true, aggregateId, new ImmediateDispatcher());
+            EventBus.RegisterHandler<RoutableTestEvent>(_ => handlerCalled = true, aggregateId, new TestSyncDispatcher());
 
             // Act
             EventBus.SendAndWait(testEvent);

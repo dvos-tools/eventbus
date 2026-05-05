@@ -1,5 +1,4 @@
 using System;
-using com.DvosTools.bus.Dispatchers;
 using NUnit.Framework;
 
 namespace com.DvosTools.bus
@@ -113,7 +112,7 @@ namespace com.DvosTools.bus
         {
             // Arrange
             var aggregateId = Guid.NewGuid();
-            var customDispatcher = new ImmediateDispatcher();
+            var customDispatcher = new TestSyncDispatcher();
             var handlerCalled = false;
 
             // Act

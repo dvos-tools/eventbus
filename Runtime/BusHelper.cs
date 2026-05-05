@@ -5,7 +5,7 @@ namespace com.DvosTools.bus
     public class BusHelper : MonoBehaviour
     {
         private static BusHelper _instance;
-        
+
         public static BusHelper Instance =>
             _instance ??= new GameObject(nameof(BusHelper)).AddComponent<BusHelper>();
 
@@ -18,32 +18,20 @@ namespace com.DvosTools.bus
 
         public void LogAllHandlers()
         {
+            // Per-T handler registry is internal post-refactor; expose only the queue summary.
             var logMessage = "[EventBus] === Current Handler Registry ===\n";
-            foreach (var kvp in EventBus.Instance.Handlers)
-                logMessage += $"[EventBus] Event: {kvp.Key.Name} -> {kvp.Value.Count} handler(s)\n";
+            logMessage += "[EventBus] (per-T registry is internal; use EventBus.GetHandlerCount<T>() / HasHandlers<T>() to inspect)\n";
             logMessage += "[EventBus] === End Handler Registry ===";
-
             Debug.Log(logMessage);
         }
 
         public void LogQueueStatus()
         {
-            lock (EventBus.Instance.QueueLock)
-            {
-                var logMessage = "[EventBus] === Queue Status ===\n";
-                logMessage += $"[EventBus] Queue Count: {EventBus.Instance.EventQueue.Count}\n";
-
-                var queueArray = EventBus.Instance.EventQueue.ToArray();
-                for (var i = 0; i < queueArray.Length; i++)
-                {
-                    var queuedEvent = queueArray[i];
-                    logMessage +=
-                        $"[EventBus] [{i}] {queuedEvent.EventType.Name} (Queued: {queuedEvent.QueuedAt:HH:mm:ss})\n";
-                }
-
-                logMessage += "[EventBus] === End Queue Status ===";
-                Debug.Log(logMessage);
-            }
+            var logMessage = "[EventBus] === Queue Status ===\n";
+            logMessage += $"[EventBus] Total Queued: {EventBus.GetQueueCount()}\n";
+            logMessage += $"[EventBus] Total Buffered: {EventBus.GetTotalBufferedEventCount()}\n";
+            logMessage += "[EventBus] === End Queue Status ===";
+            Debug.Log(logMessage);
         }
 
         /// <summary>
@@ -52,7 +40,6 @@ namespace com.DvosTools.bus
         /// </summary>
         public void Cleanup()
         {
-            // Clear static reference
             _instance = null;
         }
 

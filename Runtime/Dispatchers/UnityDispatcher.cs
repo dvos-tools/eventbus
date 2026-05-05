@@ -7,30 +7,15 @@ using UnityEngine;
 
 namespace com.DvosTools.bus.Dispatchers
 {
-    internal class QueuedAction
-    {
-        public Action<object> Handler { get; }
-        public object State { get; }
-        public TaskCompletionSource<bool> CompletionSource { get; }
-        public string? EventTypeName { get; }
-        public Guid? AggregateId { get; }
-
-        public QueuedAction(Action<object> handler, object state, string? eventTypeName = null, Guid? aggregateId = null)
-        {
-            Handler = handler ?? throw new ArgumentNullException(nameof(handler));
-            State = state;
-            CompletionSource = new TaskCompletionSource<bool>();
-            EventTypeName = eventTypeName;
-            AggregateId = aggregateId;
-        }
-    }
-
     public class UnityDispatcher : MonoBehaviour, IDispatcher
     {
+        /// <summary>Max main-thread jobs drained per Unity Update tick. Tunable for hot paths.</summary>
+        public static int DrainBudgetPerFrame { get; set; } = 32;
+
         private static UnityDispatcher? _instance;
         private static readonly object Lock = new();
         private static SynchronizationContext? _mainThreadContext;
-        private static readonly Queue<QueuedAction> _actionQueue = new();
+        private static readonly Queue<IRunnable> _actionQueue = new();
         private static readonly object _queueLock = new();
 
         public static UnityDispatcher? Instance
@@ -53,21 +38,21 @@ namespace com.DvosTools.bus.Dispatchers
             }
         }
 
-        private void Awake()
-        {
-            // Capture the main thread context
-            _mainThreadContext = SynchronizationContext.Current;
-        }
+        private void Awake() { _mainThreadContext = SynchronizationContext.Current; }
 
         public bool IsQueueEmpty()
         {
-            lock (_queueLock)
-            {
-                return _actionQueue.Count == 0;
-            }
+            lock (_queueLock) return _actionQueue.Count == 0;
         }
 
-        public async Task DispatchAndWaitAsync(Action<object> handler, object state, string? eventTypeName = null, Guid? aggregateId = null)
+        public void Dispatch<T>(Action<T> handler, in T state, string? eventTypeName = null, Guid? aggregateId = null)
+        {
+            if (handler == null) return;
+            var job = new MainThreadJob<T> { Handler = handler, State = state, EventTypeName = eventTypeName, AggregateId = aggregateId };
+            lock (_queueLock) _actionQueue.Enqueue(job);
+        }
+
+        public void DispatchAndWait<T>(Action<T> handler, in T state, string? eventTypeName = null, Guid? aggregateId = null)
         {
             if (handler == null) return;
             try
@@ -75,158 +60,123 @@ namespace com.DvosTools.bus.Dispatchers
                 if (SynchronizationContext.Current == _mainThreadContext)
                 {
                     handler(state);
+                    return;
                 }
-                else
+                var job = new MainThreadJob<T>
                 {
-                    var queuedAction = new QueuedAction(handler, state, eventTypeName, aggregateId);
-
-                    lock (_queueLock)
-                    {
-                        _actionQueue.Enqueue(queuedAction);
-                    }
-
-                    await queuedAction.CompletionSource.Task;
-                }
+                    Handler = handler,
+                    State = state,
+                    Tcs = new TaskCompletionSource<bool>(),
+                    EventTypeName = eventTypeName,
+                    AggregateId = aggregateId
+                };
+                lock (_queueLock) _actionQueue.Enqueue(job);
+                job.Tcs!.Task.Wait();
             }
             catch (Exception ex)
             {
-                var errorMessage = aggregateId.HasValue
-                    ? $"DispatchAndWaitAsync error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
-                    : $"DispatchAndWaitAsync error for {eventTypeName}: {ex.Message}";
-                EventBusLogger.LogError(errorMessage);
+                EventBusLogger.LogError(FormatError("DispatchAndWait", eventTypeName, aggregateId, ex));
             }
         }
 
+        public Task DispatchAndWaitAsync<T>(Action<T> handler, in T state, string? eventTypeName = null, Guid? aggregateId = null)
+        {
+            if (handler == null) return Task.CompletedTask;
+            try
+            {
+                if (SynchronizationContext.Current == _mainThreadContext)
+                {
+                    handler(state);
+                    return Task.CompletedTask;
+                }
+                var job = new MainThreadJob<T>
+                {
+                    Handler = handler,
+                    State = state,
+                    Tcs = new TaskCompletionSource<bool>(),
+                    EventTypeName = eventTypeName,
+                    AggregateId = aggregateId
+                };
+                lock (_queueLock) _actionQueue.Enqueue(job);
+                return job.Tcs!.Task;
+            }
+            catch (Exception ex)
+            {
+                EventBusLogger.LogError(FormatError("DispatchAndWaitAsync", eventTypeName, aggregateId, ex));
+                return Task.FromException(ex);
+            }
+        }
+
+        private static string FormatError(string scope, string? eventTypeName, Guid? aggregateId, Exception ex)
+        {
+            return aggregateId.HasValue
+                ? $"{scope} error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
+                : $"{scope} error for {eventTypeName}: {ex.Message}";
+        }
 
         private void Update()
         {
-            // Process one action per frame to maintain FIFO order and prevent blocking
-            QueuedAction? queuedAction = null;
-            lock (_queueLock)
+            int budget = DrainBudgetPerFrame;
+            for (int i = 0; i < budget; i++)
             {
-                if (_actionQueue.Count > 0)
-                    queuedAction = _actionQueue.Dequeue();
-            }
-
-            if (queuedAction != null)
-            {
-                try
+                IRunnable? job = null;
+                lock (_queueLock)
                 {
-                    queuedAction.Handler(queuedAction.State);
-                    queuedAction.CompletionSource.SetResult(true);
+                    if (_actionQueue.Count > 0) job = _actionQueue.Dequeue();
                 }
-                catch (Exception ex)
-                {
-                    var errorMessage = queuedAction.AggregateId.HasValue
-                        ? $"Main thread action error for {queuedAction.EventTypeName} (ID: {queuedAction.AggregateId}): {ex.Message}"
-                        : $"Main thread action error for {queuedAction.EventTypeName}: {ex.Message}";
-                    EventBusLogger.LogError(errorMessage);
-                    queuedAction.CompletionSource.SetException(ex);
-                }
+                if (job == null) break;
+                job.Run();
             }
         }
 
-        public void Dispatch(Action<object> handler, object state, string? eventTypeName = null, Guid? aggregateId = null)
-        {
-            if (handler == null) return;
-            try
-            {
-                if (_mainThreadContext != null)
-                {
-                    var box = new QueuedAction(handler, state, eventTypeName, aggregateId);
-                    _mainThreadContext.Post(s =>
-                    {
-                        var b = (QueuedAction)s!;
-                        try
-                        {
-                            b.Handler(b.State);
-                        }
-                        catch (Exception ex)
-                        {
-                            var errorMessage = b.AggregateId.HasValue
-                                ? $"Handler error for {b.EventTypeName} (ID: {b.AggregateId}): {ex.Message}"
-                                : $"Handler error for {b.EventTypeName}: {ex.Message}";
-                            EventBusLogger.LogError(errorMessage);
-                        }
-                    }, box);
-                }
-                else
-                {
-                    _mainThreadContext = SynchronizationContext.Current;
-                }
-            }
-            catch (Exception ex)
-            {
-                var errorMessage = aggregateId.HasValue
-                    ? $"Dispatch error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
-                    : $"Dispatch error for {eventTypeName}: {ex.Message}";
-                EventBusLogger.LogError(errorMessage);
-            }
-        }
-
-        public void DispatchAndWait(Action<object> handler, object state, string? eventTypeName = null, Guid? aggregateId = null)
-        {
-            if (handler == null) return;
-            try
-            {
-                if (SynchronizationContext.Current == _mainThreadContext)
-                {
-                    handler(state);
-                }
-                else
-                {
-                    var queuedAction = new QueuedAction(handler, state, eventTypeName, aggregateId);
-
-                    lock (_queueLock)
-                    {
-                        _actionQueue.Enqueue(queuedAction);
-                    }
-
-                    queuedAction.CompletionSource.Task.Wait();
-                }
-            }
-            catch (Exception ex)
-            {
-                var errorMessage = aggregateId.HasValue
-                    ? $"DispatchAndWait error for {eventTypeName} (ID: {aggregateId}): {ex.Message}"
-                    : $"DispatchAndWait error for {eventTypeName}: {ex.Message}";
-                EventBusLogger.LogError(errorMessage);
-            }
-        }
-
-        /// <summary>
-        /// Cleans up the UnityDispatcher resources.
-        /// This can be called manually or is automatically called by Unity's OnDestroy.
-        /// </summary>
         public void Cleanup()
         {
             lock (_queueLock)
             {
                 while (_actionQueue.Count > 0)
                 {
-                    var queuedAction = _actionQueue.Dequeue();
-                    try
-                    {
-                        if (!queuedAction.CompletionSource.Task.IsCompleted)
-                        {
-                            queuedAction.CompletionSource.SetCanceled();
-                        }
-                    }
-                    catch (ObjectDisposedException)
-                    {
-                        // Already disposed, ignore
-                    }
+                    var job = _actionQueue.Dequeue();
+                    job.TryCancel();
                 }
             }
-
             _instance = null;
             _mainThreadContext = null;
         }
 
-        private void OnDestroy()
-        {
-            Cleanup();
-        }
+        private void OnDestroy() { Cleanup(); }
 
+        internal interface IRunnable { void Run(); void TryCancel(); }
+
+        private sealed class MainThreadJob<T> : IRunnable
+        {
+            public Action<T>? Handler;
+            public T State = default!;
+            public TaskCompletionSource<bool>? Tcs;
+            public string? EventTypeName;
+            public Guid? AggregateId;
+
+            public void Run()
+            {
+                try
+                {
+                    Handler!(State);
+                    Tcs?.SetResult(true);
+                }
+                catch (Exception ex)
+                {
+                    EventBusLogger.LogError(AggregateId.HasValue
+                        ? $"Main thread action error for {EventTypeName} (ID: {AggregateId}): {ex.Message}"
+                        : $"Main thread action error for {EventTypeName}: {ex.Message}");
+                    try { Tcs?.SetException(ex); } catch (InvalidOperationException) { /* already set */ }
+                }
+            }
+
+            public void TryCancel()
+            {
+                try { if (Tcs != null && !Tcs.Task.IsCompleted) Tcs.SetCanceled(); }
+                catch (ObjectDisposedException) { }
+                catch (InvalidOperationException) { }
+            }
+        }
     }
 }

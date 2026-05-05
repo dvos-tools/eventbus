@@ -1,5 +1,4 @@
 using System;
-using com.DvosTools.bus.Dispatchers;
 using NUnit.Framework;
 
 namespace com.DvosTools.bus
@@ -61,7 +60,7 @@ namespace com.DvosTools.bus
         public void RegisterHandler_WithCustomDispatcher_HandlerUsesCustomDispatcher()
         {
             // Arrange
-            var customDispatcher = new ImmediateDispatcher();
+            var customDispatcher = new TestSyncDispatcher();
             var handlerCalled = false;
 
             // Act
