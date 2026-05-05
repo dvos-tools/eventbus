@@ -1,3 +1,10 @@
+# [1.15.0](https://github.com/dvos-tools/eventbus/compare/v1.14.0...v1.15.0) (2026-05-05)
+
+
+### Features
+
+* fixing Dispose and GameObject cleanup ([2a29e23](https://github.com/dvos-tools/eventbus/commit/2a29e2304d91df09ee382b51843e273fe60ef1ea))
+
 # [1.14.0](https://github.com/dvos-tools/eventbus/compare/v1.13.0...v1.14.0) (2026-05-05)
 
 
