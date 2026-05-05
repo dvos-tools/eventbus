@@ -2,6 +2,8 @@ using System;
 
 namespace com.DvosTools.bus
 {
+    /// <summary>[Obsolete] Use Subscription&lt;T&gt; via the typed handler store.</summary>
+    [Obsolete("Subscription is internal post-refactor. Reading EventBusInstance.Handlers returns an empty snapshot.")]
     public class Subscription
     {
         public Action<object> Handler { get; set; }

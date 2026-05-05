@@ -62,7 +62,7 @@ namespace com.DvosTools.bus
             EventBus.RegisterHandler<TestEvent>(evt =>
             {
                 handlerCalled = true;
-            }, Guid.Empty, new ImmediateDispatcher());
+            }, Guid.Empty, new TestSyncDispatcher());
 
             // Act - Use deprecated instance API
             EventBus.Instance.SendAndWait(testEvent);
@@ -83,7 +83,7 @@ namespace com.DvosTools.bus
             EventBus.Send(testEvent);
 
             // Register handler
-            EventBus.RegisterHandler<RoutableTestEvent>(evt => handlerCalled = true, aggregateId, new ImmediateDispatcher());
+            EventBus.RegisterHandler<RoutableTestEvent>(evt => handlerCalled = true, aggregateId, new TestSyncDispatcher());
 
             // Act - Use deprecated instance API
             EventBus.Instance.AggregateReady(aggregateId);
@@ -224,41 +224,28 @@ namespace com.DvosTools.bus
         }
 
         [Test]
-        public void Instance_Handlers_Property_WorksCorrectly()
+        public void Instance_Handlers_Property_ReturnsEmptyShim()
         {
-            // Arrange
+            // Post-refactor: per-T handler registry is internal. The deprecated Instance.Handlers
+            // property is kept only as an empty shim for backwards-compat with reflection-based callers.
             var aggregateId = Guid.NewGuid();
             EventBus.RegisterHandler<TestEvent>(evt => { }, aggregateId);
 
-            // Act - Use deprecated instance API
             var handlers = EventBus.Instance.Handlers;
 
-            // Assert
-            Assert.IsNotNull(handlers, "Handlers property should not be null");
-            Assert.IsTrue(handlers.ContainsKey(typeof(TestEvent)), "Should contain TestEvent handlers");
-            Assert.AreEqual(1, handlers[typeof(TestEvent)].Count, "Should have one TestEvent handler");
-            
-            var subscription = handlers[typeof(TestEvent)][0];
-            Assert.AreEqual(aggregateId, subscription.AggregateId, "Should have correct aggregate ID");
-            Assert.IsInstanceOf<ThreadPoolDispatcher>(subscription.Dispatcher, "Should use ThreadPoolDispatcher by default");
+            Assert.IsNotNull(handlers, "Handlers shim should not be null");
+            Assert.AreEqual(0, handlers.Count, "Handlers shim returns empty dictionary post-refactor; use EventBus.GetHandlerCount<T>() instead");
         }
 
         [Test]
-        public void Instance_EventQueue_Property_WorksCorrectly()
+        public void Instance_EventQueue_Property_ReturnsEmptyShim()
         {
-            // Arrange
-            var testEvent = new TestEvent { Message = "Queue Property Test" };
-            EventBus.RegisterHandler<TestEvent>(evt => { }, Guid.Empty, new ThreadPoolDispatcher());
-
-            // Send event (should be queued)
-            EventBus.Send(testEvent);
-
-            // Act - Use deprecated instance API
+            // Post-refactor: per-T queues are internal. The deprecated Instance.EventQueue shim
+            // returns a fresh empty Queue<QueuedEvent> for backwards-compat.
             var eventQueue = EventBus.Instance.EventQueue;
 
-            // Assert
-            Assert.IsNotNull(eventQueue, "EventQueue property should not be null");
-            // Note: Queue might be empty if processing was very fast, so we just check it's not null
+            Assert.IsNotNull(eventQueue, "EventQueue shim should not be null");
+            Assert.AreEqual(0, eventQueue.Count, "EventQueue shim returns empty queue post-refactor; use EventBus.GetQueueCount() instead");
         }
 
         [Test]
@@ -296,8 +283,8 @@ namespace com.DvosTools.bus
             var handlerCalled = false;
             var routableHandlerCalled = false;
 
-            EventBus.RegisterHandler<TestEvent>(evt => handlerCalled = true, Guid.Empty, new ImmediateDispatcher());
-            EventBus.RegisterHandler<RoutableTestEvent>(evt => routableHandlerCalled = true, aggregateId, new ImmediateDispatcher());
+            EventBus.RegisterHandler<TestEvent>(evt => handlerCalled = true, Guid.Empty, new TestSyncDispatcher());
+            EventBus.RegisterHandler<RoutableTestEvent>(evt => routableHandlerCalled = true, aggregateId, new TestSyncDispatcher());
 
             // Act - Use multiple deprecated instance API methods
             EventBus.Instance.Send(testEvent);

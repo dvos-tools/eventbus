@@ -1,318 +1,222 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using com.DvosTools.bus.Dispatchers;
 
 namespace com.DvosTools.bus.Core
 {
-    internal class EventBusService
+    internal static class EventBusService
     {
-        private readonly EventBusCore _core;
-
-        public EventBusService(EventBusCore core)
+        public static void Send<T>(in T eventData, Guid aggregateId = default)
         {
-            _core = core ?? throw new ArgumentNullException(nameof(core));
-        }
+            EventBusRegistry.Register<T>();
+            Guid id = aggregateId;
+            if (id == Guid.Empty && RoutingProbe<T>.Extract != null)
+                id = RoutingProbe<T>.Extract(eventData);
 
-        public void Send<T>(T eventData) where T : class
-        {
-            var queuedEvent = new QueuedEvent(eventData, typeof(T), DateTime.UtcNow);
-            var aggregateId = queuedEvent.AggregateId;
-
-            // Handle non-routed events (no aggregate ID)
-            if (aggregateId == Guid.Empty)
+            if (id != Guid.Empty && !HasAnyHandler<T>(id))
             {
-                QueueEvent(queuedEvent, typeof(T).Name);
+                Buffer(in eventData, id);
+                EventBusLogger.Log($"Buffered {EventTypeName<T>.Value} for aggregate ID {id} (no handler available)");
                 return;
             }
 
-            // Handle routed events - check if handler exists
-            if (HasHandlerForAggregate(typeof(T), aggregateId))
-            {
-                QueueEvent(queuedEvent, typeof(T).Name);
-                return;
-            }
-
-            // No handler found - buffer the event
-            BufferEvent(queuedEvent, aggregateId, typeof(T).Name);
+            var queued = new QueuedEvent<T> { Event = eventData, AggregateId = id, QueuedAt = DateTime.UtcNow };
+            QueueScheduler.Enqueue(in queued);
+            EventBusLogger.Log($"Queued {EventTypeName<T>.Value}");
         }
 
-        public void SendAndWait<T>(T eventData) where T : class
+        public static void SendAndWait<T>(in T eventData, Guid aggregateId = default)
         {
-            var eventType = typeof(T);
-            var aggregateId = eventData is IRoutableEvent r ? r.AggregateId : Guid.Empty;
+            EventBusRegistry.Register<T>();
+            Guid id = aggregateId;
+            if (id == Guid.Empty && RoutingProbe<T>.Extract != null)
+                id = RoutingProbe<T>.Extract(eventData);
 
-            var handlerInfos = SnapshotHandlersFor(eventType, aggregateId);
-            if (handlerInfos.Count == 0)
+            Subscription<T>[]? globals;
+            Subscription<T>[]? routed = null;
+            lock (HandlerStore<T>.Lock)
             {
-                EventBusLogger.LogWarning($"No handlers for {eventType.Name}");
+                globals = HandlerStore<T>.GlobalSnapshot;
+                if (id != Guid.Empty)
+                    HandlerStore<T>.RoutedSnapshot.TryGetValue(id, out routed);
+            }
+
+            if (globals == null && routed == null)
+            {
+                EventBusLogger.LogWarning($"No handlers for {EventTypeName<T>.Value}");
                 return;
             }
 
-            // Process handlers sequentially to maintain FIFO order
-            foreach (var handlerInfo in handlerInfos)
-            {
-                ProcessHandlerAndWaitAsync(handlerInfo, eventData, eventType.Name, aggregateId).Wait();
-            }
+            Guid? logId = id == Guid.Empty ? (Guid?)null : id;
+            if (globals != null)
+                foreach (var sub in globals)
+                    sub.Dispatcher.DispatchAndWait(sub.Handler, in eventData, EventTypeName<T>.Value, logId);
+            if (routed != null)
+                foreach (var sub in routed)
+                    sub.Dispatcher.DispatchAndWait(sub.Handler, in eventData, EventTypeName<T>.Value, logId);
         }
 
-        public void AggregateReady(Guid aggregateId, IReadOnlyCollection<Delegate>? handlersForReadyFlush = null)
+        /// <summary>Synchronous in-place dispatch from buffered storage. Used by AggregateReady drain.</summary>
+        public static void DispatchInPlace<T>(in QueuedEvent<T> ev)
+        {
+            Subscription<T>[]? globals;
+            Subscription<T>[]? routed = null;
+            lock (HandlerStore<T>.Lock)
+            {
+                globals = HandlerStore<T>.GlobalSnapshot;
+                if (ev.AggregateId != Guid.Empty)
+                    HandlerStore<T>.RoutedSnapshot.TryGetValue(ev.AggregateId, out routed);
+            }
+            if (globals == null && routed == null)
+            {
+                EventBusLogger.LogWarning($"No handlers for {EventTypeName<T>.Value}");
+                return;
+            }
+            Guid? logId = ev.AggregateId == Guid.Empty ? (Guid?)null : ev.AggregateId;
+            if (globals != null)
+                foreach (var sub in globals)
+                    sub.Dispatcher.DispatchAndWait(sub.Handler, in ev.Event, EventTypeName<T>.Value, logId);
+            if (routed != null)
+                foreach (var sub in routed)
+                    sub.Dispatcher.DispatchAndWait(sub.Handler, in ev.Event, EventTypeName<T>.Value, logId);
+        }
+
+        public static void RegisterHandler<T>(Action<T> handler, Guid aggregateId = default, IDispatcher? dispatcher = null)
+        {
+            EventBusRegistry.Register<T>();
+            // Default dispatcher kept as ThreadPoolDispatcher for backwards-compat with existing async tests.
+            // Use RegisterUnityHandler explicitly to opt into main-thread dispatch.
+            var dispatcherInstance = dispatcher ?? new ThreadPoolDispatcher();
+            var sub = new Subscription<T>(handler, dispatcherInstance, aggregateId, handler);
+
+            lock (HandlerStore<T>.Lock)
+            {
+                if (!HandlerStore<T>.ByAggregate.TryGetValue(aggregateId, out var list))
+                {
+                    list = new List<Subscription<T>>();
+                    HandlerStore<T>.ByAggregate[aggregateId] = list;
+                }
+                list.Add(sub);
+                HandlerStore<T>.RebuildRoutedSnapshot(aggregateId);
+            }
+
+            EventBusLogger.Log(aggregateId != Guid.Empty
+                ? $"Registered routed handler for {EventTypeName<T>.Value} (ID: {aggregateId})"
+                : $"Registered handler for {EventTypeName<T>.Value}");
+        }
+
+        public static void DisposeHandlers<T>()
+        {
+            lock (HandlerStore<T>.Lock)
+            {
+                HandlerStore<T>.ByAggregate.Clear();
+                HandlerStore<T>.RoutedSnapshot.Clear();
+                HandlerStore<T>.GlobalSnapshot = null;
+            }
+            lock (EventQueueStore<T>.Lock) EventQueueStore<T>.Queue.Clear();
+        }
+
+        public static void DisposeHandlersForAggregate<T>(Guid aggregateId)
+        {
+            if (aggregateId == Guid.Empty) return;
+            lock (HandlerStore<T>.Lock)
+            {
+                if (HandlerStore<T>.ByAggregate.Remove(aggregateId))
+                    HandlerStore<T>.RebuildRoutedSnapshot(aggregateId);
+            }
+            // Match legacy behavior: dropping handlers for this T at aggregate clears events for the
+            // aggregate across all event types (their delivery target is gone for this aggregate scope).
+            EventBusRegistry.ClearEventsForAggregateAcrossTypes(aggregateId);
+        }
+
+        public static void DisposeHandlerFromAggregate<T>(Action<T> handler, Guid aggregateId)
+        {
+            if (aggregateId == Guid.Empty) return;
+            bool clearEvents = true;
+            lock (HandlerStore<T>.Lock)
+            {
+                if (HandlerStore<T>.ByAggregate.TryGetValue(aggregateId, out var list))
+                {
+                    list.RemoveAll(s => ReferenceEquals(s.OriginalHandler, handler));
+                    if (list.Count == 0) HandlerStore<T>.ByAggregate.Remove(aggregateId);
+                    HandlerStore<T>.RebuildRoutedSnapshot(aggregateId);
+                }
+            }
+            foreach (var op in EventBusRegistry.All)
+                if (op.HasHandlerForAggregate(aggregateId)) { clearEvents = false; break; }
+
+            // Cross-type clear: drop queued + buffered events for this aggregate across all T's.
+            if (clearEvents) EventBusRegistry.ClearEventsForAggregateAcrossTypes(aggregateId);
+        }
+
+        public static void AggregateReady(Guid aggregateId)
         {
             if (aggregateId == Guid.Empty)
             {
                 EventBusLogger.LogWarning("Cannot mark empty aggregate ID as ready");
                 return;
             }
-
-            if (handlersForReadyFlush != null)
-            {
-                if (handlersForReadyFlush.Count == 0)
-                {
-                    EventBusLogger.LogWarning("AggregateReady with an empty handler list does nothing; use AggregateReady(aggregateId) without handlers to flush the entire buffer.");
-                    return;
-                }
-
-                AggregateReadyForHandlers(aggregateId, handlersForReadyFlush);
-                return;
-            }
-
-            var eventsToProcess = ExtractBufferedEvents(aggregateId);
-            if (eventsToProcess.Count == 0)
+            int total = EventBusRegistry.BufferedFor(aggregateId);
+            if (total == 0)
             {
                 EventBusLogger.Log($"No buffered events found for aggregate ID {aggregateId}");
                 return;
             }
-
-            // Process buffered events immediately, and in order
-            // This ensures they are processed as a batch in the exact order they were buffered
-            foreach (var eventToProcess in eventsToProcess)
-            {
-                ProcessEventImmediately(eventToProcess);
-            }
-
-            EventBusLogger.Log($"Processed {eventsToProcess.Count} buffered events immediately (aggregate ID: {aggregateId})");
+            EventBusRegistry.DrainBufferedForAggregate(aggregateId);
+            EventBusLogger.Log($"Processed {total} buffered events immediately (aggregate ID: {aggregateId})");
         }
 
-        private void AggregateReadyForHandlers(Guid aggregateId, IReadOnlyCollection<Delegate> handlers)
+        public static void AggregateReady(Guid aggregateId, IReadOnlyCollection<Delegate> handlers)
         {
-            int processedCount = 0;
-            lock (_core.BufferedEventsLock)
+            if (aggregateId == Guid.Empty)
             {
-                if (!_core.BufferedEvents.TryGetValue(aggregateId, out var bufferedQueue))
-                {
-                    EventBusLogger.Log($"No buffered events found for aggregate ID {aggregateId}");
-                    return;
-                }
-
-                var remaining = new Queue<QueuedEvent>();
-                while (bufferedQueue.Count > 0)
-                {
-                    var queuedEvent = bufferedQueue.Dequeue();
-                    if (ShouldProcessBufferedEventForReadyHandlers(queuedEvent, aggregateId, handlers))
-                    {
-                        ProcessEventImmediately(queuedEvent);
-                        processedCount++;
-                    }
-                    else
-                    {
-                        remaining.Enqueue(queuedEvent);
-                    }
-                }
-
-                if (remaining.Count > 0)
-                    _core.BufferedEvents[aggregateId] = remaining;
-                else
-                    _core.BufferedEvents.Remove(aggregateId);
-            }
-
-            EventBusLogger.Log($"Processed {processedCount} buffered events for specified handlers (aggregate ID: {aggregateId})");
-        }
-
-        /// <summary>
-        /// Partial flush: only dequeue buffered events that correspond to one of the given handler
-        /// delegate references. Each released event is delivered via <see cref="ProcessEventImmediately"/>,
-        /// matching the full AggregateReady path (not a separate filtered delivery).
-        /// </summary>
-        private bool ShouldProcessBufferedEventForReadyHandlers(QueuedEvent queuedEvent, Guid aggregateId, IReadOnlyCollection<Delegate> handlers)
-        {
-            lock (_core.HandlersLock)
-            {
-                if (!_core.Handlers.TryGetValue(queuedEvent.EventType, out var byAggregate))
-                    return false;
-                return byAggregate.TryGetValue(aggregateId, out var list) && list.Count > 0;
-            }
-        }
-
-        public async Task ProcessEventAsync(QueuedEvent queuedEvent)
-        {
-            var handlerInfos = SnapshotHandlersFor(queuedEvent.EventType, queuedEvent.AggregateId);
-            if (handlerInfos.Count == 0)
-            {
-                EventBusLogger.LogWarning($"No handlers for {queuedEvent.EventType.Name}");
+                EventBusLogger.LogWarning("Cannot mark empty aggregate ID as ready");
                 return;
             }
-
-            // Process handlers sequentially to maintain FIFO order
-            foreach (var handlerInfo in handlerInfos)
+            if (handlers == null || handlers.Count == 0)
             {
-                await ProcessHandlerAndWaitAsync(handlerInfo, queuedEvent.EventData, queuedEvent.EventType.Name, queuedEvent.AggregateId);
-            }
-        }
-
-
-        public static void RegisterHandler<T>(Action<T> handler, Guid aggregateId = default, IDispatcher? dispatcher = null) where T : class
-        {
-            var core = EventBusCore.Instance;
-            var eventType = typeof(T);
-            var wrapper = new Action<object>(obj => handler((T)obj));
-
-            var customDispatcher = dispatcher ?? new ThreadPoolDispatcher();
-            var subscription = new Subscription(wrapper, customDispatcher, aggregateId, handler);
-            EventBusLogger.Log($"Registered handler: {handler?.GetHashCode()} for aggregate {aggregateId}");
-
-            lock (core.HandlersLock)
-            {
-                if (!core.Handlers.TryGetValue(eventType, out var byAggregate))
-                {
-                    byAggregate = new Dictionary<Guid, List<Subscription>>();
-                    core.Handlers[eventType] = byAggregate;
-                }
-                if (!byAggregate.TryGetValue(aggregateId, out var list))
-                {
-                    list = new List<Subscription>();
-                    byAggregate[aggregateId] = list;
-                }
-                list.Add(subscription);
-            }
-
-            EventBusLogger.Log(aggregateId != Guid.Empty
-                ? $"Registered routed handler for {eventType.Name} (ID: {aggregateId})"
-                : $"Registered handler for {eventType.Name}");
-        }
-
-
-        private bool HasHandlerForAggregate(Type eventType, Guid aggregateId)
-        {
-            lock (_core.HandlersLock)
-            {
-                if (!_core.Handlers.TryGetValue(eventType, out var byAggregate))
-                    return false;
-                return byAggregate.TryGetValue(aggregateId, out var list) && list.Count > 0;
-            }
-        }
-
-        /// <summary>
-        /// Snapshot the subscriptions that should receive an event of <paramref name="eventType"/>:
-        /// global handlers (Guid.Empty bucket) plus, when the event is routed, the matching aggregate bucket.
-        /// Snapshot is taken under HandlersLock so dispatch can run lock-free.
-        /// </summary>
-        private List<Subscription> SnapshotHandlersFor(Type eventType, Guid eventAggregateId)
-        {
-            var result = new List<Subscription>();
-            lock (_core.HandlersLock)
-            {
-                if (!_core.Handlers.TryGetValue(eventType, out var byAggregate))
-                    return result;
-
-                if (byAggregate.TryGetValue(Guid.Empty, out var globals))
-                    result.AddRange(globals);
-
-                if (eventAggregateId != Guid.Empty
-                    && byAggregate.TryGetValue(eventAggregateId, out var routed))
-                {
-                    result.AddRange(routed);
-                }
-            }
-            return result;
-        }
-
-
-        private void QueueEvent(QueuedEvent queuedEvent, string eventTypeName)
-        {
-            lock (_core.QueueLock)
-                _core.EventQueue.Enqueue(queuedEvent);
-
-            _core.NotifyQueued();
-            EventBusLogger.Log($"Queued {eventTypeName}");
-        }
-
-        private void BufferEvent(QueuedEvent queuedEvent, Guid aggregateId, string eventTypeName)
-        {
-            lock (_core.BufferedEventsLock)
-            {
-                if (!_core.BufferedEvents.ContainsKey(aggregateId))
-                    _core.BufferedEvents[aggregateId] = new Queue<QueuedEvent>();
-
-                _core.BufferedEvents[aggregateId].Enqueue(queuedEvent);
-            }
-
-            EventBusLogger.Log($"Buffered {eventTypeName} for aggregate ID {aggregateId} (no handler available)");
-        }
-
-        private Task ProcessHandlerAndWaitAsync(Subscription subscription, object eventData, string eventTypeName, Guid eventAggregateId)
-        {
-            // Bucket selection guarantees subscription is either global (Guid.Empty) or matches eventAggregateId.
-            // Pass handler+state directly so dispatcher does not allocate a closure per call.
-            if (subscription.AggregateId != Guid.Empty)
-                return subscription.Dispatcher.DispatchAndWaitAsync(subscription.Handler, eventData, eventTypeName, eventAggregateId);
-
-            return subscription.Dispatcher.DispatchAndWaitAsync(subscription.Handler, eventData, eventTypeName);
-        }
-
-        public void ProcessEventImmediately(QueuedEvent queuedEvent)
-        {
-            var handlerInfos = SnapshotHandlersFor(queuedEvent.EventType, queuedEvent.AggregateId);
-            if (handlerInfos.Count == 0)
-            {
-                EventBusLogger.LogWarning($"No handlers for {queuedEvent.EventType.Name}");
+                EventBusLogger.LogWarning("AggregateReady with an empty handler list does nothing; use AggregateReady(aggregateId) without handlers to flush the entire buffer.");
                 return;
             }
+            EventBusRegistry.DrainBufferedForHandlersAcrossTypes(aggregateId, handlers);
+        }
 
-            // Process handlers immediately and sequentially to maintain FIFO order
-            foreach (var handlerInfo in handlerInfos)
+        private static bool HasAnyHandler<T>(Guid aggregateId)
+        {
+            lock (HandlerStore<T>.Lock)
             {
-                ProcessHandlerImmediately(handlerInfo, queuedEvent.EventData, queuedEvent.EventType.Name, queuedEvent.AggregateId);
+                if (HandlerStore<T>.GlobalSnapshot != null) return true;
+                return HandlerStore<T>.ByAggregate.TryGetValue(aggregateId, out var list) && list.Count > 0;
             }
         }
 
-        private void ProcessHandlerImmediately(Subscription subscription, object eventData, string eventTypeName, Guid eventAggregateId)
+        private static void Buffer<T>(in T eventData, Guid aggregateId)
         {
-            if (subscription.AggregateId != Guid.Empty)
+            var queued = new QueuedEvent<T> { Event = eventData, AggregateId = aggregateId, QueuedAt = DateTime.UtcNow };
+            lock (BufferStore<T>.Lock)
             {
-                subscription.Dispatcher.DispatchAndWait(subscription.Handler, eventData, eventTypeName, eventAggregateId);
-                return;
-            }
-
-            subscription.Dispatcher.DispatchAndWait(subscription.Handler, eventData, eventTypeName);
-        }
-
-
-        private List<QueuedEvent> ExtractBufferedEvents(Guid aggregateId)
-        {
-            lock (_core.BufferedEventsLock)
-            {
-                if (!_core.BufferedEvents.TryGetValue(aggregateId, out var bufferedQueue))
-                    return new List<QueuedEvent>();
-
-                var eventsToProcess = new List<QueuedEvent>();
-                while (bufferedQueue.Count > 0)
+                if (!BufferStore<T>.ByAggregate.TryGetValue(aggregateId, out var q))
                 {
-                    eventsToProcess.Add(bufferedQueue.Dequeue());
+                    q = new Queue<QueuedEvent<T>>();
+                    BufferStore<T>.ByAggregate[aggregateId] = q;
                 }
-
-                _core.BufferedEvents.Remove(aggregateId);
-                return eventsToProcess;
+                q.Enqueue(queued);
             }
         }
 
-        public void DisposeHandlerFromAggregate<T>(Action<T> handler, Guid aggregateId) where T : class
+        private static void ClearEventsForAggregateInQueue<T>(Guid aggregateId)
         {
-            lock (_core.QueueLock)
+            lock (EventQueueStore<T>.Lock)
             {
-                _core.DisposeHandlerFromAggregate(handler, aggregateId);
+                var q = EventQueueStore<T>.Queue;
+                int count = q.Count;
+                for (int i = 0; i < count; i++)
+                {
+                    var ev = q.Dequeue();
+                    if (ev.AggregateId != aggregateId) q.Enqueue(ev);
+                }
             }
         }
-
     }
 }

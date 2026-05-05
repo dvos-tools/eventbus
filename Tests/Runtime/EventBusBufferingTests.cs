@@ -1,7 +1,6 @@
 using System;
 using System.Linq;
 using System.Threading;
-using com.DvosTools.bus.Dispatchers;
 using NUnit.Framework;
 
 namespace com.DvosTools.bus
@@ -136,7 +135,7 @@ namespace com.DvosTools.bus
             {
                 handlerCalledCount++;
                 receivedData.Add(evt.Data);
-            }, aggregateId, new ImmediateDispatcher());
+            }, aggregateId, new TestSyncDispatcher());
 
             // Act
             EventBus.AggregateReady(aggregateId);
@@ -159,7 +158,7 @@ namespace com.DvosTools.bus
             var aggregateId = Guid.NewGuid();
             var handlerCalled = false;
 
-            EventBus.RegisterHandler<RoutableTestEvent>(evt => handlerCalled = true, aggregateId, new ImmediateDispatcher());
+            EventBus.RegisterHandler<RoutableTestEvent>(evt => handlerCalled = true, aggregateId, new TestSyncDispatcher());
 
             // Act
             EventBus.AggregateReady(aggregateId);
@@ -193,7 +192,7 @@ namespace com.DvosTools.bus
             EventBus.Send(event2);
             EventBus.Send(event3);
 
-            EventBus.RegisterHandler<RoutableTestEvent>(evt => processedOrder.Add(evt.Data), aggregateId, new ImmediateDispatcher());
+            EventBus.RegisterHandler<RoutableTestEvent>(evt => processedOrder.Add(evt.Data), aggregateId, new TestSyncDispatcher());
 
             // Act
             EventBus.AggregateReady(aggregateId);
@@ -286,7 +285,7 @@ namespace com.DvosTools.bus
             EventBus.Send(event1);
 
             // Register handler
-            EventBus.RegisterHandler<RoutableTestEvent>(evt => handlerCalledCount++, aggregateId, new ImmediateDispatcher());
+            EventBus.RegisterHandler<RoutableTestEvent>(evt => handlerCalledCount++, aggregateId, new TestSyncDispatcher());
 
             // Send second event (should not be buffered)
             EventBus.SendAndWait(event2);

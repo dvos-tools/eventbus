@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 using System.Threading.Tasks;
 
@@ -5,57 +6,48 @@ namespace com.DvosTools.bus.Dispatchers
 {
     public class ThreadPoolDispatcher : IDispatcher
     {
-        private sealed class WorkItem
+        private interface IRunnable { void Run(); }
+
+        private sealed class WorkItem<T> : IRunnable
         {
-            public Action<object>? Handler;
-            public object? State;
+            public Action<T>? Handler;
+            public T State = default!;
             public string? EventTypeName;
             public Guid? AggregateId;
+
+            public void Run()
+            {
+                try { Handler!(State); }
+                catch (Exception ex)
+                {
+                    EventBusLogger.LogError(AggregateId.HasValue
+                        ? $"Routed handler error for {EventTypeName} (ID: {AggregateId}): {ex.Message}"
+                        : $"Handler error for {EventTypeName}: {ex.Message}");
+                }
+            }
         }
 
-        private static readonly Action<object> RunWorkItem = obj =>
-        {
-            var w = (WorkItem)obj;
-            try
-            {
-                w.Handler!(w.State!);
-            }
-            catch (Exception ex)
-            {
-                var errorMessage = w.AggregateId.HasValue
-                    ? $"Routed handler error for {w.EventTypeName} (ID: {w.AggregateId}): {ex.Message}"
-                    : $"Handler error for {w.EventTypeName}: {ex.Message}";
-                EventBusLogger.LogError(errorMessage);
-            }
-        };
+        private static readonly Action<object?> RunWorkItem = obj => ((IRunnable)obj!).Run();
 
-        public void Dispatch(Action<object> handler, object state, string? eventTypeName = null, Guid? aggregateId = null)
+        public void Dispatch<T>(Action<T> handler, in T state, string? eventTypeName = null, Guid? aggregateId = null)
         {
             if (handler == null) return;
-            Task.Factory.StartNew(RunWorkItem, Box(handler, state, eventTypeName, aggregateId));
+            var w = new WorkItem<T> { Handler = handler, State = state, EventTypeName = eventTypeName, AggregateId = aggregateId };
+            Task.Factory.StartNew(RunWorkItem, w);
         }
 
-        public void DispatchAndWait(Action<object> handler, object state, string? eventTypeName = null, Guid? aggregateId = null)
+        public void DispatchAndWait<T>(Action<T> handler, in T state, string? eventTypeName = null, Guid? aggregateId = null)
         {
             if (handler == null) return;
-            Task.Factory.StartNew(RunWorkItem, Box(handler, state, eventTypeName, aggregateId)).Wait();
+            var w = new WorkItem<T> { Handler = handler, State = state, EventTypeName = eventTypeName, AggregateId = aggregateId };
+            Task.Factory.StartNew(RunWorkItem, w).Wait();
         }
 
-        public Task DispatchAndWaitAsync(Action<object> handler, object state, string? eventTypeName = null, Guid? aggregateId = null)
+        public Task DispatchAndWaitAsync<T>(Action<T> handler, in T state, string? eventTypeName = null, Guid? aggregateId = null)
         {
             if (handler == null) return Task.CompletedTask;
-            return Task.Factory.StartNew(RunWorkItem, Box(handler, state, eventTypeName, aggregateId));
-        }
-
-        private static WorkItem Box(Action<object> handler, object state, string? eventTypeName, Guid? aggregateId)
-        {
-            return new WorkItem
-            {
-                Handler = handler,
-                State = state,
-                EventTypeName = eventTypeName,
-                AggregateId = aggregateId
-            };
+            var w = new WorkItem<T> { Handler = handler, State = state, EventTypeName = eventTypeName, AggregateId = aggregateId };
+            return Task.Factory.StartNew(RunWorkItem, w);
         }
     }
 }
