@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/dvos-tools/eventbus/compare/v1.13.0...v1.14.0) (2026-05-05)
+
+
+### Features
+
+* added back xml docstrings ([5121e3f](https://github.com/dvos-tools/eventbus/commit/5121e3f7c9c74013a737cf8dcc8d1ec17ba0b4f2))
+
 # [1.13.0](https://github.com/dvos-tools/eventbus/compare/v1.12.0...v1.13.0) (2026-05-03)
 
 
