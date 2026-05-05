@@ -40,7 +40,11 @@ namespace com.DvosTools.bus
         /// </summary>
         public void Cleanup()
         {
-            _instance = null;
+            if (_instance == this)
+            {
+                _instance = null;
+                if (gameObject != null) Destroy(gameObject);
+            }
         }
 
         private void OnDestroy()

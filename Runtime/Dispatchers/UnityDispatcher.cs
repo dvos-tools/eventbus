@@ -139,8 +139,12 @@ namespace com.DvosTools.bus.Dispatchers
                     job.TryCancel();
                 }
             }
-            _instance = null;
-            _mainThreadContext = null;
+            if (_instance == this)
+            {
+                _instance = null;
+                _mainThreadContext = null;
+                if (gameObject != null) Destroy(gameObject);
+            }
         }
 
         private void OnDestroy() { Cleanup(); }

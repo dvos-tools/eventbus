@@ -173,7 +173,7 @@ namespace com.DvosTools.bus.Core
                         foreach (var sub in list)
                         {
                             foreach (var h in handlers)
-                                if (ReferenceEquals(sub.OriginalHandler, h)) { typeMatches = true; break; }
+                                if (sub.OriginalHandler.Equals(h)) { typeMatches = true; break; }
                             if (typeMatches) break;
                         }
                     }

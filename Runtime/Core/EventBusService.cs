@@ -138,7 +138,7 @@ namespace com.DvosTools.bus.Core
             {
                 if (HandlerStore<T>.ByAggregate.TryGetValue(aggregateId, out var list))
                 {
-                    list.RemoveAll(s => ReferenceEquals(s.OriginalHandler, handler));
+                    list.RemoveAll(s => s.OriginalHandler.Equals(handler));
                     if (list.Count == 0) HandlerStore<T>.ByAggregate.Remove(aggregateId);
                     HandlerStore<T>.RebuildRoutedSnapshot(aggregateId);
                 }
